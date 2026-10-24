@@ -1,0 +1,1477 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- הדף יכול לתקשר רק עם השרת של Claude (api.anthropic.com), ורק בלחיצה על כפתור ואחרי אישור. שום כתובת אחרת לא נגישה ממנו. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src https://api.anthropic.com">
+<title>טופס דוח אבחון</title>
+<style>
+:root{
+  --bg:#f5f4f0; --panel:#fff; --ink:#1e2226; --muted:#5d6570; --line:#dbd8d1; --soft:#efede7;
+  --accent:#1d6b5a; --accent-ink:#fff; --accent-soft:#dcefe8; --warn:#9a3412; --warn-soft:#fdecdf;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#15171a; --panel:#1e2125; --ink:#e6e8eb; --muted:#9ea6b0; --line:#33373d; --soft:#25292e;
+    --accent:#3fae95; --accent-ink:#0c1a16; --accent-soft:#1f3d35; --warn:#f0a070; --warn-soft:#3a2418; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 "Segoe UI",Arial,"Noto Sans Hebrew",sans-serif}
+header{padding:14px 20px;border-bottom:1px solid var(--line);background:var(--panel);display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;position:sticky;top:0;z-index:5}
+header h1{font-size:19px;margin:0}
+.hdr-fields{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}
+.hdr-fields label{font-size:14px;color:var(--muted)}
+.wrap{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:16px;padding:16px;max-width:1500px;margin:0 auto}
+@media (max-width:980px){ .wrap{grid-template-columns:1fr} .out-col{position:static!important;max-height:none!important} }
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.tabs button{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 12px;border-radius:999px;cursor:pointer;font:inherit;font-size:14px}
+.tabs button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:12px}
+.card h3{margin:0 0 10px;font-size:16px}
+.ctl{margin-bottom:12px}
+.ctl > .lbl{display:block;font-weight:600;font-size:14px;margin-bottom:5px}
+.row{display:flex;flex-wrap:wrap;gap:10px}
+.row > .ctl{flex:1 1 150px}
+select,input[type=text],input[type=number],textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;width:100%}
+textarea{min-height:60px;resize:vertical}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips label{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:4px 11px;cursor:pointer;font-size:14px;user-select:none}
+.chips input{display:none}
+.chips label:has(input:checked){background:var(--accent-soft);border-color:var(--accent);font-weight:600}
+.hint{font-size:13px;color:var(--muted);margin:4px 0 0}
+table.sc{border-collapse:collapse;width:100%}
+table.sc td,table.sc th{border-bottom:1px solid var(--line);padding:5px 4px;text-align:right;font-size:14px;vertical-align:middle}
+table.sc th{color:var(--muted);font-weight:600}
+table.sc input,table.sc select{padding:4px 6px}
+.out-col{position:sticky;top:76px;max-height:calc(100vh - 92px);overflow:auto}
+.outbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+button.btn{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 13px;border-radius:6px;cursor:pointer}
+button.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button.btn:disabled{opacity:.55;cursor:wait}
+.of{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.of .t{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.of .t b{font-size:14px;flex:1}
+.of .badge{font-size:12px;padding:1px 8px;border-radius:999px;background:var(--soft);color:var(--muted)}
+.of .badge:empty{display:none}
+.of .badge.ai{background:var(--accent-soft);color:var(--accent)}
+.of textarea{min-height:44px;background:var(--bg)}
+.of button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--soft);color:var(--ink);padding:3px 10px;border-radius:5px;cursor:pointer}
+.of.empty{opacity:.55}
+.msg{font-size:13px;color:var(--muted)}
+.warnbox{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:8px 12px;font-size:14px;margin-bottom:10px}
+.okbox{background:var(--accent-soft);color:var(--accent);border-radius:8px;padding:8px 12px;font-size:14px;margin-bottom:10px}
+.sec{display:none}.sec.on{display:block}
+#modalWrap{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}
+#modalWrap[hidden]{display:none}
+#modal{background:var(--panel);color:var(--ink);border-radius:12px;padding:18px 20px;max-width:720px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+#modal h3{margin:0 0 8px;font-size:17px}
+#modal .lbl{display:block;font-weight:600;font-size:14px;margin:10px 0 4px}
+.mrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.adv{margin-top:14px}.adv summary{cursor:pointer;color:var(--muted);font-size:13px}
+.sendprev{white-space:pre-wrap;word-wrap:break-word;border:1px solid var(--line);border-radius:6px;padding:10px;background:var(--bg);max-height:50vh;overflow:auto;font-size:14px}
+.tok{background:var(--accent-soft);color:var(--accent);border-radius:4px;padding:0 3px;font-weight:600}
+#keyBtn.ok{border-color:var(--accent);color:var(--accent)}
+@media (max-width:700px){
+  header{position:static;padding:10px 12px}
+  header h1{font-size:17px}
+  .hdr-fields{gap:8px}
+  .hdr-fields label{display:flex;flex-direction:column;gap:3px;flex:1 1 140px}
+  .hdr-fields input,.hdr-fields select{width:100%!important}
+  .wrap{padding:10px;gap:10px}
+  .card{padding:12px}
+  .tabs{position:sticky;top:0;z-index:4;background:var(--bg);padding:6px 0;margin-bottom:8px}
+  .outbar .btn{flex:1 1 45%}
+  table.sc td{font-size:13px}
+  #modal{padding:14px}
+}
+.ctl.filled{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+#imPreview{white-space:pre-wrap;word-wrap:break-word;border:1px solid var(--line);border-radius:6px;padding:10px;background:var(--bg);max-height:380px;overflow:auto;font-size:14px;min-height:60px}
+#imPreview .r{background:var(--accent-soft);color:var(--accent);border-radius:4px;padding:0 3px;font-weight:600;cursor:help}
+#imPreview .w{cursor:pointer;border-radius:3px}
+#imPreview .w:hover{outline:1px dashed var(--muted)}
+#imPreview .fl{background:#fff0b3;color:#5a4600}
+.chip-s{display:inline-block;background:var(--soft);border-radius:999px;padding:2px 10px;font-size:13px;margin:0 0 6px 6px}
+.chip-s.fl{background:#fff0b3;color:#5a4600}
+</style>
+</head>
+<body>
+<header>
+  <h1>טופס דוח אבחון</h1>
+  <div class="hdr-fields">
+    <label>שם פרטי (נשאר במכשיר, לא נשלח) <input type="text" id="name" style="width:120px"></label>
+    <label>שמות נוספים בדוח (אחים וכו') <input type="text" id="names2" style="width:150px" placeholder="מופרדים בפסיק"></label>
+    <label>מגדר <select id="gender" style="width:auto"><option value="m">בן</option><option value="f">בת</option></select></label>
+    <label>גיל <input type="number" id="ageY" min="0" max="18" style="width:62px" placeholder="שנים"> <input type="number" id="ageM" min="0" max="11" style="width:62px" placeholder="חודשים"></label>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="form-col">
+    <div class="tabs" id="tabs"></div>
+    <div id="form"></div>
+  </div>
+  <div class="out-col">
+    <div class="outbar">
+      <button class="btn primary" id="polish">ניסוח בעזרת Claude</button>
+      <button class="btn" id="keyBtn">הגדרת מפתח API</button>
+      <button class="btn" id="copyAll">העתקת הכול</button>
+      <button class="btn" id="exportWord">ייצוא ל-Word</button>
+      <button class="btn" id="saveDraft">שמירת טיוטה</button>
+      <button class="btn" id="openDraft">פתיחת טיוטה</button>
+      <input type="file" id="draftFile" accept=".otdraft,.json" hidden>
+      <button class="btn" id="resetAll">ניקוי הטופס</button>
+      <span class="msg" id="msg"></span>
+    </div>
+    <div id="status"></div>
+    <div id="out"></div>
+  </div>
+</div>
+
+<div id="modalWrap" hidden><div id="modal" role="dialog" aria-modal="true"></div></div>
+
+<script>
+// =====================================================================
+//  הגדרות ובנקי ניסוחים. {זכר|נקבה} מוחלף לפי המגדר. [שם] מוחלף בשם רק במחשב.
+// =====================================================================
+
+const AYRES_ITEMS = [
+  ['prone','שכיבה על הבטן נגד כוח המשיכה (Prone extension)'],
+  ['supine','כפיפה בשכיבה על הגב (Supine flexion)'],
+  ['tone','טונוס שרירים'],
+  ['cocon','קו-קונטרקציה'],
+  ['equil','תגובות שיווי משקל'],
+  ['oneleg','עמידה על רגל אחת'],
+  ['diado','תנועות מתחלפות (דיאדוכוקינזיס)'],
+  ['fingnose','אצבע-אף'],
+  ['thumb','מגע אגודל באצבעות'],
+  ['midline','חציית קו האמצע'],
+  ['eyes','תנועות עיניים ומעקב חזותי'],
+  ['schilder','הושטת ידיים (Schilder)'],
+];
+const AYRES_LEVELS = [['','לא נבדק'],['ok','תקין'],['mild','קושי קל'],['sig','קושי משמעותי']];
+
+const SP2_QUADS = [['seek','חיפוש תחושתי'],['avoid','הימנעות תחושתית'],['sens','רגישות תחושתית'],['reg','רישום נמוך']];
+const SP2_SECTIONS = [['aud','עיבוד שמיעתי'],['vis','עיבוד ראייתי'],['touch','עיבוד מגע'],['move','עיבוד תנועה'],['body','עיבוד תנוחת גוף'],['oral','עיבוד אוראלי']];
+const SP2_LEVELS = [['','—'],['mless','הרבה פחות מאחרים'],['less','פחות מאחרים'],['same','כמו רוב האחרים'],['more','יותר מאחרים'],['mmore','הרבה יותר מאחרים']];
+
+const BEERY = [['vmi','אינטגרציה ויזו-מוטורית'],['vp','תפיסה חזותית ללא מעורבות מוטורית'],['mc','קואורדינציה מוטורית']];
+const MAP_IDX = [['found','מדד היסודות'],['coord','מדד הקואורדינציה'],['verbal','המדד המילולי'],['nonverb','המדד הבלתי מילולי'],['complex','מדד המשימות המורכבות'],['total','הציון הכולל']];
+
+const SENS_MOD = [['hear','שמיעה'],['vision','ראייה'],['oral','פה'],['touch','מגע'],['move','תנועה'],['smell','ריח']];
+
+// ---------- מבנה הטופס ----------
+// כל פריט: {type, id, label, opts:[[key,label,phrase?]], hint}
+const SECTIONS = [
+ { id:'s_bg', title:'רקע', cards:[
+  { title:'הפניה ואמצעי הערכה', items:[
+    {type:'chips', id:'joint', opts:[['yes','אבחון משותף עם קלינאית תקשורת']]},
+    {type:'select', id:'ref', label:'גורם מפנה', opts:[
+      ['',''],['ganenet','הגננת','בהפניית הגננת'],['frame','המסגרת החינוכית','בהפניית המסגרת החינוכית'],['teacher','המורה','בהפניית המורה'],
+      ['parents','ההורים','ביוזמת ההורים'],['slp','קלינאית התקשורת','בהפניית קלינאית התקשורת'],['devdoc','רופא התפתחותי','בהמלצת רופא התפתחותי'],
+      ['neuro','נוירולוג ילדים','בהפניית נוירולוג ילדים'],['physio','פיזיותרפיסט/ית','בהפניית הפיזיותרפיסט/ית']]},
+    {type:'chips', id:'reasons', label:'סיבות הפניה', opts:[
+      ['fm','מוטוריקה עדינה','קשיים במוטוריקה עדינה'],['write','כתיבה','קשיים בכתיבה'],['org','התארגנות','קשיי התארגנות'],
+      ['att','קשב ומוסחות','קשב ומוסחות'],['clumsy','סרבול מוטורי','סרבול מוטורי'],['delay','עיכוב התפתחותי','עיכוב התפתחותי'],
+      ['lang','שפה ודיבור','קשיי שפה ודיבור'],['play','משחק','קשיים בהתפתחות המשחק'],['sens','ויסות חושי','קשיים בוויסות חושי'],
+      ['adl','עצמאות','קשיים בעצמאות בתפקודי יומיום'],['hands','תפקודי ידיים','הערכת תפקודי ידיים']]},
+    {type:'chips', id:'tools', label:'אמצעי הערכה', opts:[
+      ['q_par','שאלון הורים','שאלון הורים'],['q_gan','שאלון גננת','שאלון גננת'],['q_teach','שאלון מורה','שאלון מורה'],
+      ['talk','שיחה עם ההורים','שיחה עם ההורים בזמן האבחון'],
+      ['obs','תצפית','תצפית על פעילויות מובנות וחופשיות במטרה להעריך תפקוד מוטורי, קוגניטיבי והתנהגותי'],
+      ['beery','Beery','Beery-Buktenica Developmental Test of Visual-Motor Integration (Beery VMI)'],
+      ['map','MAP','Miller Assessment for Preschoolers (MAP)'],
+      ['sp2','פרופיל חושי','Sensory Profile 2 (SP2) - שאלון הפרופיל החושי'],
+      ['ayres','תצפית איירס','תצפית קלינית (Ayres Clinical Observations)'],
+      ['aa','א"א כתב יד','א"א כתב יד - אבחון כתיבה'],
+      ['grade1','מבדק כתיבה כיתה א\'','מבדק כתיבה לכיתות א\'']]},
+  ]},
+  { title:'רקע התפתחותי ורפואי', items:[
+    {type:'row', items:[
+      {type:'number', id:'week', label:'שבוע לידה'},
+      {type:'text', id:'weight', label:'משקל לידה (ק"ג)'},
+      {type:'select', id:'btype', label:'סוג לידה', opts:[['',''],['normal','רגילה'],['cs','ניתוח קיסרי']]},
+      {type:'select', id:'preg', label:'היריון', opts:[['',''],['ok','תקין'],['complex','מורכב']]},
+    ]},
+    {type:'select', id:'miles', label:'אבני דרך', opts:[['',''],['ok','במועד'],['delay','בעיכוב']]},
+    {type:'select', id:'health', label:'מצב רפואי', opts:[['',''],['ok','בריא/ה בדרך כלל'],['note','ראו הערה']]},
+    {type:'select', id:'hv', label:'בדיקות שמיעה וראייה', opts:[['',''],['ok','בוצעו, תקינות'],['none','עדיין לא בוצעו'],['partial','חלקי (ראו הערה)']]},
+    {type:'textarea', id:'bgNote', label:'הערות לרקע', hint:'בלי שמות, תאריכים מדויקים או מוסדות.'},
+    {type:'textarea', id:'prevTx', label:'טיפולים ואבחונים קודמים', hint:'למשל: עבר אבחון פיזיותרפיה בו נצפה... הומלץ על...'},
+  ]},
+  { title:'רקע משפחתי', items:[
+    {type:'row', items:[
+      {type:'select', id:'sib', label:'מקום בין האחים', opts:[['',''],['only','יחיד/ה'],['first','בכור/ה'],['mid','אמצעי/ת'],['young','צעיר/ה']]},
+      {type:'number', id:'sibN', label:'מספר ילדים במשפחה'},
+      {type:'select', id:'lang', label:'שפת הבית', opts:[['',''],['he','עברית'],['bi','דו-לשונית (ראו הערה)']]},
+    ]},
+    {type:'textarea', id:'famNote', label:'הערות', hint:'בלי שמות ההורים ובלי פרטים מזהים (מקצוע ייחודי, עיר).'},
+  ]},
+ ]},
+ { id:'s_rep', title:'דיווחים', cards:[
+  { title:'דיווח ההורים', items:[
+    {type:'chips', id:'parGen', opts:[
+      ['easy','ילד/ה נוח/ה','{ילד נוח|ילדה נוחה}'],['social','חברותי/ת','{חברותי, נהנה|חברותית, נהנית} בחברת בני גילו'],
+      ['active','פעיל/ה','{ילד פעיל|ילדה פעילה}'],['indep','עצמאי/ת','{עצמאי|עצמאית} כמצופה מבני גילו'],
+      ['clumsy','מסורבל/ת','{מסורבל ומרבה ליפול, נתקל|מסורבלת ומרבה ליפול, נתקלת} בדברים'],
+      ['fmdiff','קושי במוטוריקה עדינה','{מתקשה|מתקשה} בפעילויות מוטוריקה עדינה (שרוכים, רוכסן, כפתורים)'],
+      ['grasp','אחיזה','{אינו אוחז|אינה אוחזת} נכון את כלי הכתיבה'],['puzz','פאזלים','{מתקשה|מתקשה} בהרכבת פאזלים ובהתאמת צורות'],
+      ['screens','מסכים','{מרבה|מרבה} לצפות במסכים'],['frust','תסכול','{מתוסכל|מתוסכלת} ו{מתעצבן|מתעצבנת} מהר כשלא מצליח'],
+      ['att','קשב','{מתקשה|מתקשה} להתמיד בפעילות לאורך זמן']]},
+    {type:'sensory', id:'pSens', label:'דיווח חושי לפי חוש'},
+    {type:'row', items:[
+      {type:'text', id:'eat', label:'אכילה'},
+      {type:'text', id:'sleep', label:'שינה'},
+    ]},
+    {type:'row', items:[
+      {type:'text', id:'dress', label:'לבוש'},
+      {type:'text', id:'playHome', label:'משחק בבית'},
+    ]},
+    {type:'textarea', id:'parNote', label:'הערות נוספות'},
+  ]},
+  { title:'דיווח המסגרת החינוכית', items:[
+    {type:'select', id:'frame', label:'מסגרת', opts:[['',''],['mishp','משפחתון'],['maon','מעון'],['tth','גן טט"ח'],['th','גן טרום חובה'],['hova','גן חובה'],['tikshoret','גן תקשורת'],['school','בית ספר']]},
+    {type:'text', id:'grade', label:'כיתה (לבית ספר)'},
+    {type:'chips', id:'schGen', opts:[
+      ['coop','משתף/ת פעולה','{משתף|משתפת} פעולה ו{פעיל|פעילה}'],['good','תלמיד/ה טוב/ה','{תלמיד טוב|תלמידה טובה}, בעל{|ת} יכולות גבוהות'],
+      ['grasp','קושי באחיזה','קושי באחיזת כלי הכתיבה'],['press','לחץ מוגבר','הפעלת לחץ מוגבר בכתיבה'],
+      ['move','תנועתיות','נטייה לתנועתיות בעת עבודה'],['dist','מוסחות','מוסחות וקושי בהתמדה'],
+      ['thread','השחלות','קושי בהשחלות ובמשחקי הרכבה'],['yard','חצר תקינה','{משתתף|משתתפת} בתנועה בחצר בהתאם לגילו'],
+      ['flex','קושי בגמישות','קושי להתגמש ולוותר במשחק עם ילדים'],['langd','שפה דלה','שפה דלה ולא ברורה']]},
+    {type:'textarea', id:'schNote', label:'הערות / ציטוט משאלון'},
+  ]},
+ ]},
+ { id:'s_find', title:'ממצאים', cards:[
+  { title:'התנהגות ושיתוף פעולה', items:[
+    {type:'select', id:'with', label:'הגיע/ה בליווי', opts:[['',''],['mom','האם'],['dad','האב'],['both','שני ההורים']]},
+    {type:'select', id:'adapt', label:'הסתגלות', opts:[['',''],['fast','מהירה'],['short','לאחר זמן קצר'],['med','נדרש זמן ותיווך']]},
+    {type:'select', id:'eye', label:'קשר עין', opts:[['',''],['good','איכותי'],['short','איכותי לפרקים קצרים'],['incons','לא עקבי'],['rare','לעיתים רחוקות']]},
+    {type:'select', id:'coop', label:'שיתוף פעולה', opts:[['',''],['full','מלא'],['part','חלקי'],['low','נמוך']]},
+    {type:'chips', id:'beh', label:'נוסף', opts:[
+      ['motiv','מוטיבציה ועניין','{מגלה|מגלה} מוטיבציה ועניין, {מתמודד|מתמודדת} היטב עם הפעילות ו{פועל|פועלת} בקצב מתאים'],
+      ['interest','משתתף/ת לפי עניין','{נוטה|נוטה} להשתתף בפעילויות מתחומי העניין {שלו|שלה} ו{מתקשה|מתקשה} לגייס מוטיבציה למשימות {שאינו אוהב|שאינה אוהבת}'],
+      ['instr','הבנת הוראות תקינה','{הבין|הבינה} הוראות בהתאם למצופה בגילו'],
+      ['instrMed','הוראות + תיווך','{הראה|הראתה} הבנת הוראות תקינה לצד צורך בתיווך, מיקוד, חזרה על הוראות וצמצום מסיחים'],
+      ['attOk','קשב תואם גיל','נצפו טווחי קשב תואמי גיל והתמדה בפעילות לאורך זמן'],
+      ['attShort','קשב קצר','{הראה|הראתה} טווחי קשב קצרים לגילו'],
+      ['dist','מוסחות','מוסחות מגירויים פנימיים וחיצוניים'],['move','תנועתיות','צורך בתנועתיות רבה'],
+      ['hesit','הססנות','בולט דפוס מעט הססני וחסר ביטחון, בעיקר במשימות לא מוכרות'],
+      ['enjoy','הנאה','{השתתף, שוחח בחופשיות והביע|השתתפה, שוחחה בחופשיות והביעה} הנאה'],
+      ['mediation','נתרם/ת מתיווך','{נתרם|נתרמת} מאוד מתיווך מילולי והדגמה']]},
+    {type:'textarea', id:'behNote', label:'הערות'},
+  ]},
+  { title:'מוטוריקה גסה', items:[
+    {type:'chips', id:'gm', opts:[
+      ['ok','תואם גיל','תפקוד מוטורי גס תואם גיל, {משתתף|משתתפת} בהנאה וביעילות בפעילות במרחב'],
+      ['clumsy','סרבול','בולט סרבול כללי בתנועה במרחב'],
+      ['bilat','תיאום דו-צידי','קושי בתיאום דו-צידי ובקואורדינציה (קפיצות מורכבות, תיאום בין הידיים)'],
+      ['conf','חוסר ביטחון','חוסר ביטחון מוטורי, בעיקר במשימות חדשות'],
+      ['learn','לומד/ת מהתנסות','נראית למידה מתוך התנסות'],
+      ['stairs','מדרגות רגל רגל','{עולה ויורד|עולה ויורדת} במדרגות רגל רגל תוך אחיזה במעקה'],
+      ['stairsFear','חשש במדרגות','נצפה חשש בירידה במדרגות'],
+      ['nojump','לא קופץ/ת','עדיין {אינו קופץ|אינה קופצת} במקום'],
+      ['posture','יציבה בישיבה','קושי בשמירה על יציבה בישיבה ליד שולחן'],
+      ['fatigue','מתעייף/ת','{מתעייף|מתעייפת} בקלות בפעילות במרחב'],
+      ['gait','הליכה לא סימטרית','בהליכה ובריצה נצפה סרבול והליכה מעט נוקשה, עם א-סימטריה'],
+      ['notdone','לא נבדק','לא נערכה תצפית על התפקוד במרחב']]},
+    {type:'ayres', id:'ayres', label:'תצפית קלינית של איירס'},
+    {type:'textarea', id:'gmNote', label:'הערות'},
+  ]},
+  { title:'מוטוריקה עדינה וגרפומוטוריקה', items:[
+    {type:'row', items:[
+      {type:'select', id:'dom', label:'דומיננטיות', opts:[['',''],['r','מבוססת בימין'],['l','מבוססת בשמאל'],['pref','העדפה לימין, לא מבוססת'],['no','לא מבוססת, לסירוגין']]},
+      {type:'select', id:'grip', label:'אחיזת כלי כתיבה', opts:[['',''],['fist','אגרוף'],['palmar','פלמרית'],['digital','דיגיטלית'],['stat','טריפוד סטטי'],['dyn','טריפוד דינמי'],['effort','מאומצת, לחץ מוגבר']]},
+      {type:'select', id:'draw', label:'שלב ציור', opts:[['',''],['scrib','שרבוט'],['scribM','שרבוט עם משמעות'],['lines','קווי יסוד'],['mean','ציור בעל משמעות']]},
+    ]},
+    {type:'chips', id:'shapes', label:'מחקה/מעתיק', opts:[['h','קו אופקי'],['v','קו אנכי'],['c','עיגול'],['x','צלב'],['sq','ריבוע'],['tri','משולש'],['diag','אלכסון']]},
+    {type:'chips', id:'fm', label:'נוסף', opts:[
+      ['manip','מניפולציות תקינות','ביצוע מניפולציות ותפעול חפצים תקינים'],
+      ['pincer','אחיזת פינצטה','{אוחז|אוחזת} פריטים קטנים באחיזת פינצטה'],
+      ['midOk','חוצה קו אמצע','{חוצה|חוצה} את קו האמצע'],['midNo','קושי בחציית קו אמצע','נצפה קושי בחציית קו האמצע'],
+      ['stabOk','מייצב/ת ביד העזר','{מייצב|מייצבת} את הדף ביד העזר'],['stabNo','לא מייצב/ת','לרוב {אינו מייצב|אינה מייצבת} את הדף ביד העזר'],
+      ['sep','הפרדת תנועה','קושי בהפרדת תנועה ובדיוק המוטורי'],['plan','תכנון תנועה','קושי בתכנון תנועה ובהתארגנות מוטורית'],
+      ['cutOk','גזירה תקינה','גזירה רציפה ויעילה'],['cutNo','קושי בגזירה','קושי בגזירה- הביצוע אינו רציף, קושי בתיאום בין הידיים'],
+      ['colorOk','צביעה בתחום','{צובע|צובעת} בתחום תוך דיוק'],['colorNo','קושי בצביעה','קושי בצביעה בתחום'],
+      ['hyper','גמישות יתר','גמישות יתר באצבעות'],['bilat','תיאום בילטראלי','תיאום מעט נמוך בין הידיים'],
+      ['tower','בונה מגדל','{בונה|בונה} מגדל מקוביות'],['thread','משחיל/ה','{משחיל|משחילה} חרוזים על חוט']]},
+    {type:'scores', id:'beery', label:'Beery VMI (אחוזון / ציון תקן)', rows:BEERY},
+    {type:'textarea', id:'fmNote', label:'הערות'},
+  ]},
+  { title:'כתיבה (גיל בית ספר)', items:[
+    {type:'row', items:[
+      {type:'text', id:'copyT', label:'זמן העתקה (דק\')'},
+      {type:'select', id:'copyS', label:'קצב העתקה', opts:[['',''],['ok','תקין'],['bitlow','מעט נמוך'],['low','נמוך']]},
+      {type:'text', id:'dictT', label:'זמן הכתבה (דק\')'},
+      {type:'select', id:'dictS', label:'קצב הכתבה', opts:[['',''],['ok','תקין'],['bitlow','מעט נמוך'],['low','נמוך']]},
+    ]},
+    {type:'chips', id:'wr', opts:[
+      ['seqOk','רצף אותיות תקין','{כותב|כותבת} את רצף האותיות ללא קושי, בכיווניות נכונה'],
+      ['seqNo','קושי ברצף אותיות','קושי בשליפת אותיות ובכיווניות כתיבתן'],
+      ['readOk','קריאה תקינה','קריאה רציפה ותקינה'],
+      ['orgOk','ארגון במחברת','ארגון יעיל בכתיבה במחברת עם שמירה על חוקי הכתיבה (רווחים, שוליים ושורות)'],
+      ['orgNo','קושי בארגון','קושי בארגון הכתיבה במחברת ובשמירה על שורות ורווחים'],
+      ['legOk','קריא וברור','כתב היד קריא וברור'],['small','כתב קטן','כתב היד קטן מאוד אך קריא'],['legNo','קריאות ירודה','קריאות כתב היד ירודה'],
+      ['press','לחץ מוגבר','{מפעיל|מפעילה} לחץ מוגבר בעת הכתיבה'],
+      ['fatigue','התעייפות','בולטת התעייפות לאורך זמן המובילה לירידה בקצב'],
+      ['strat','אסטרטגיה יעילה','{מעתיק|מעתיקה} באסטרטגיה יעילה- {זוכר|זוכרת} צירופי מילים ו{כותב|כותבת} אותם בשלמותם']]},
+    {type:'textarea', id:'grade1', label:'מבדק כתיבה לכיתות א\' - ממצאים'},
+    {type:'textarea', id:'wrNote', label:'הערות'},
+  ]},
+  { title:'תפיסה וחשיבה', items:[
+    {type:'chips', id:'cog', opts:[
+      ['orient','התמצאות','{עונה|עונה} על שאלות היכרות תוך התמצאות בפרטי {חייו|חייה}, בזמן ובמקום כמצופה בגילו'],
+      ['colors','צבעים','{משיים|משיימת} צבעי יסוד'],['shapes','צורות','{מתאים|מתאימה} צורות'],
+      ['count','ספירה','{מונה|מונה} פריטים בהתאמה'],['size','גדול/קטן','{מבחין|מבחינה} בין גדול/קטן ובין אחד/הרבה'],
+      ['puzzOk','פאזלים תואמי גיל','{מרכיב|מרכיבה} פאזלים תואמי גיל באופן עצמאי'],
+      ['puzzNo','קושי בפאזל ודגם','נצפו קשיים בהרכבת פאזל, העתקת דגם וזיהוי דומה ושונה'],
+      ['visOk','תפיסה חזותית תואמת גיל','תפקוד תואם גיל בפעילויות תפיסה חזותית'],
+      ['concept','מושגי יסוד','קושי בתפיסת מושגי יסוד'],['attn','ייתכן רקע קשבי','ייתכן שהקשיים נובעים גם מרקע קשבי']]},
+    {type:'chips', id:'blocks', label:'בנייה בקוביות - מחקה', opts:[['tower','מגדל'],['train','רכבת'],['bridge','גשר'],['chair','כסא'],['steps','מדרגות']]},
+    {type:'scores', id:'map', label:'MAP (אחוזון)', rows:MAP_IDX, noStd:true},
+    {type:'textarea', id:'cogNote', label:'הערות'},
+  ]},
+  { title:'משחק', items:[
+    {type:'select', id:'playStage', label:'שלב משחק', opts:[['',''],['explore','משחק לבד וחקירה'],['func','משחק פונקציונלי'],['symb','סימבולי פשוט'],['symb2','סימבולי מורכב / דמיון']]},
+    {type:'chips', id:'play', opts:[
+      ['joint','יוזם/ת משחק משותף','{יוזם ונענה|יוזמת ונענית} למשחק משותף'],['flex','קושי בגמישות','{מתקשה|מתקשה} להתגמש ולוותר במשחק'],
+      ['poor','חקירה דלה','חקירה דלה, {ממתין|ממתינה} לתיווך'],['motor','מוטיבציה לתנועה','המוטיבציה נוטה בעיקר למשחקי תנועה'],
+      ['build','קושי במשחקי הרכבה','עדיין {אינו בונה|אינה בונה} משהו משמעותי במשחקי הרכבה']]},
+    {type:'textarea', id:'playNote', label:'הערות'},
+  ]},
+  { title:'ויסות חושי', items:[
+    {type:'sp2', id:'sp2', label:'פרופיל חושי (SP2)'},
+    {type:'select', id:'sensConcl', label:'מסקנה', opts:[['',''],['none','לא עולה תמונה של קושי בוויסות חושי'],['some','עולים סימנים לקושי בוויסות חושי'],['clear','עולה תמונה של קושי בוויסות חושי']]},
+    {type:'textarea', id:'sensNote', label:'הערות'},
+  ]},
+ ]},
+ { id:'s_goals', title:'מטרות והמלצות', cards:[
+  { title:'מטרות טיפול', items:[
+    {type:'select', id:'recTx', label:'מומלץ לטיפול בריפוי בעיסוק', opts:[['',''],['yes','כן'],['no','לא']]},
+    {type:'goals', id:'goals'},
+    {type:'textarea', id:'goalCustom', label:'מטרה נוספת (טקסט חופשי)'},
+    {type:'row', items:[
+      {type:'select', id:'freq', label:'תדירות', opts:[['',''],['אחת לשבוע','אחת לשבוע'],['פעמיים בשבוע','פעמיים בשבוע'],['אחת לשבועיים','אחת לשבועיים'],['חודשי','חודשי'],['1-2 מפגשי הדרכה','1-2 מפגשי הדרכה']]},
+      {type:'select', id:'dur', label:'משך', opts:[['',''],['15 טיפולים','15 טיפולים'],['10 טיפולים','10 טיפולים'],['20 טיפולים','20 טיפולים'],['על פי צורך','על פי צורך']]},
+      {type:'select', id:'fmt', label:'מתכונת', opts:[['',''],['טיפול פרטני','פרטני'],['טיפול פרטני / זוגי','פרטני / זוגי'],['טיפול פרטני / הדרכת הורים','פרטני / הדרכת הורים'],['טיפול משותף רב"ע וקל"ת','משותף רב"ע וקל"ת'],['הדרכת הורים','הדרכת הורים']]},
+    ]},
+  ]},
+  { title:'המלצות נוספות', items:[
+    {type:'chips', id:'recs', opts:[
+      ['committee','ועדת אפיון וזכאות','מומלצת פנייה לוועדת אפיון וזכאות לשם התאמת מסגרת חינוכית או סיוע במסגרת סל אישי בהתאם {לצרכיו|לצרכיה} של [שם]'],
+      ['hv','בדיקות ראייה ושמיעה','ביצוע בדיקות ראייה ושמיעה'],
+      ['screen','צמצום מסכים','מומלץ צמצום זמן מסך בהתאם להמלצת משרד הבריאות'],
+      ['attn','מעקב קשב','מעקב אחר טווחי הקשב ופנייה לנוירולוג לקראת גיל 6 ש\''],
+      ['devdoc','רופא התפתחותי','אבחון רופא התפתחותי'],['psych','אבחון פסיכולוגי','אבחון פסיכולוגי'],
+      ['physio','פיזיותרפיה','אבחון פיזיותרפיה'],['slpDx','אבחון קל"ת','אבחון קלינאית תקשורת'],
+      ['slpF','מעקב קל"ת','מעקב אצל קלינאית תקשורת בהתאם להמלצה'],
+      ['jointTx','טיפול משותף','טיפול משותף בקלינאות תקשורת וריפוי בעיסוק במסגרת היחידה'],
+      ['parents','הדרכת הורים','מומלצת הדרכת הורים למתן כלים בהתמודדות היום-יומית'],
+      ['sport','חוג ספורט','רישום לחוג ספורט בקהילה (ג\'ודו, שחייה, ריקוד, קפוארה, טניס) לשם חיזוק התשתית הגופנית והביטחון המוטורי'],
+      ['sw','עו"ס','אינטייק עו"ס היחידה והדרכה בהתאם'],
+      ['medical','מעקב רפואי','מעקב רפואי בהתאם לממצאים']]},
+    {type:'textarea', id:'recCustom', label:'המלצות נוספות (טקסט חופשי)'},
+    {type:'select', id:'famResp', label:'תגובת המשפחה', opts:[['',''],['שותפים ומסכימים','שותפים ומסכימים'],['שותפה ומסכימה','שותפה ומסכימה (האם)'],['שותף ומסכים','שותף ומסכים (האב)']]},
+  ]},
+ ]},
+];
+
+const IMPORT_HTML = `
+<div class="card"><h3>1. קבצים לקריאה</h3>
+  <div class="ctl"><span class="lbl">קובצי Word (docx) או טקסט (txt)</span><input type="file" id="imFiles" multiple accept=".docx,.txt"></div>
+  <div class="ctl"><span class="lbl">או הדביקי טקסט (למשל מתוך Cliks או מ-PDF)</span><textarea id="imPaste" style="min-height:90px"></textarea></div>
+  <button class="btn primary" id="imRead">קריאה</button>
+  <p class="hint">הקבצים נקראים בתוך הדף, במכשיר שלך. שום דבר לא נשלח בשלב הזה.</p>
+  <div id="imErr"></div>
+</div>
+<div class="card"><h3>2. בדיקת פרטים מזהים</h3>
+  <div class="ctl"><span class="lbl">שמות נוספים בקובץ להסרה (רופאים, גננת, מוסדות)</span><input type="text" id="imExtra" placeholder="מופרדים בפסיק"><p class="hint">השם של הילד ושמות מהשדה "שמות נוספים" למעלה מוסרים אוטומטית. לחיצה על מילה בתצוגה מסירה אותה.</p></div>
+  <div id="imInfo"></div>
+  <div id="imPreview"><span class="msg">התצוגה תופיע כאן אחרי הקריאה.</span></div>
+  <p class="hint">ירוק = הוסר. צהוב = חשוד, כדאי לבדוק. רק הטקסט שבתצוגה הזו יכול לצאת מהמחשב, ורק בלחיצה על "שליפה בעזרת Claude".</p>
+</div>
+<div class="card"><h3>3. מילוי הטופס</h3>
+  <div class="row" style="gap:8px">
+    <button class="btn" id="imHeads">מילוי לפי כותרות (בלי Claude)</button>
+    <button class="btn primary" id="imExtract">שליפה אוטומטית בעזרת Claude</button>
+  </div>
+  <p class="hint">בחרי אחת משתי הדרכים. "מילוי לפי כותרות" מעתיק לשדות ההערות קטעים מתחת לכותרות מוכרות (רקע התפתחותי, רקע משפחתי, דיווח ההורים וכו'), כמו בדוחות Cliks. "שליפה בעזרת Claude" ממלא גם בחירות ושדות, ושולח רק את הטקסט שבתצוגה. שדות שכבר מילאת לא נדרסים.</p>
+  <div id="imStatus"></div>
+</div>`;
+const TABS = [{id:'s_import', title:'ייבוא מקבצים', html: IMPORT_HTML}].concat(SECTIONS);
+
+const GOALS = [
+ ['attn','השתתפות וקשב','[שם] {ישתתף ויתמיד|תשתתף ותתמיד} בפעילות תואמת גיל במשך 10 דק\', תוך הפחתת הצורך בתיווך בהדרגה',
+   ['פעילות מטרימה להעלאת עוררות וקשב','התאמת הסביבה: הפחתת מסיחים, שימוש בסדר פעולות חזותי','מתן אסטרטגיות תואמות גיל לזיכרון עבודה']],
+ ['base','תשתית מוטורית','[שם] {יחזק|תחזק} את התשתית המוטורית להשתתפות יעילה בפעילות ליד שולחן:',
+   ['{ישמור|תשמור} על יציבה בישיבה ליד שולחן','{יחצה|תחצה} את קו האמצע במרחב וליד שולחן','{ישתתף|תשתתף} בפעילויות יצירה תוך תיאום בילטראלי יעיל, דיוק מוטורי והפרדת תנועה']],
+ ['graph','גרפומוטוריקה','[שם] {ישתתף|תשתתף} בפעילות גרפו-מוטורית ביעילות ובאופן עצמאי:',
+   ['{יבסס|תבסס} שימוש עקבי ביד הדומיננטית','{יאחז|תאחז} את כלי הכתיבה באחיזה יעילה תוך הפרדת תנועה ממפרקים פרוקסימאליים','{יצייר|תצייר} ציור חופשי בעל משמעות באיכות קו טובה','{ימלא|תמלא} שטחים בצביעה שיטתית']],
+ ['vis','תפיסה חזותית','[שם] {ישתתף|תשתתף} במשחקים ובפעילויות ליד שולחן הדורשים תפקודי תפיסה חזותית בהתאם לגילו:',
+   ['{ירכיב|תרכיב} פאזל 9 חלקים באופן עצמאי תוך שימוש באסטרטגיה יעילה','{יעתיק|תעתיק} דגם פשוט ממוחש למוחש','{יזהה|תזהה} דומה ושונה']],
+ ['play','משחק','[שם] {ישתתף|תשתתף} במגוון משחקים תואמי גיל במסגרת החינוכית ובבית:',
+   ['פיתוח תחומי עניין ומשחק, הדרכת הורים להבניית סדר יום עם זמנים למשחק הדדי משותף, משחקי דמיון ומשחקים מובנים','{ירחיב|תרחיב} את תחום המשחק למשחק סימבולי פשוט עם רצף של 2-3 שלבים','{ישחק|תשחק} במשחקים הדורשים תיאום בילטראלי ומיומנויות כף יד עדינות תוך פתרון בעיות וחקירה']],
+ ['inter','אינטראקציה (פעוטות)','יצירת קשר והרחבת אינטראקציה משותפת והדדיות:',
+   ['הרחבת מגוון הכוונות התקשורתיות והאמצעים להבעה באופן בלתי מילולי ומילולי','הרחבת היענות לפניות והוראות','הרחבת משחק תואם גיל, בדגש על משחקי תפיסה, חשיבה ומיומנויות מוטוריות עדינות']],
+ ['adl','עצמאות יומיומית','הגברת עצמאות במיומנויות יומיום, בדגש על לבוש ואכילה, בהתאם למצופה בגילו',[]],
+ ['plan','תכנון תנועה','שכלול מיומנויות תנועה- תכנון תנועה והפרדת תנועה, והתנסות במהלך מטלות תפקודיות',[]],
+ ['write','כתיבה','שיפור איכות וקצב הכתיבה:',
+   ['הפחתת הלחץ בעת הכתיבה וחיזוק האצבעות','{יכתוב|תכתוב} תוך שמירה על חוקי הכתיבה (רווחים, שוליים ושורות)','מתן התאמות נדרשות במסגרת הלימודית לפי הצורך']],
+ ['guide','מפגשי הדרכה','1-2 מפגשי הדרכה בתחום ההתאמות הנדרשות, ומתן תרגול לבית',[]],
+ ['sens','פרופיל חושי','מומלץ במהלך הטיפול להעמיק ולהתרשם מהפרופיל החושי ולהתאים את הטיפול ואת ההדרכה להורים בהתאם',[]],
+ ['gmEval','הערכת מוטוריקה גסה','הערכת תחום המוטוריקה הגסה בתחילת הטיפול',[]],
+];
+
+// ---------- שדות הפלט (לפי Cliks) ----------
+const FIELDS = [
+  ['tools','אמצעי הערכה'],
+  ['background','רקע התפתחותי ורפואי רלוונטי'],
+  ['prev','טיפולים בעבר ובהווה'],
+  ['family','רקע משפחתי'],
+  ['parents','דיווח ההורים והילד'],
+  ['school','דיווח מסגרת חינוכית'],
+  ['f_beh','ממצאי האבחון - התנהגות ושיתוף פעולה'],
+  ['f_gm','ממצאי האבחון - מוטוריקה גסה'],
+  ['f_fm','ממצאי האבחון - מוטוריקה עדינה וגרפומוטוריקה'],
+  ['f_wr','ממצאי האבחון - כתיבה'],
+  ['f_cog','ממצאי האבחון - תפיסה וחשיבה'],
+  ['f_play','ממצאי האבחון - משחק'],
+  ['f_sens','ממצאי האבחון - ויסות חושי'],
+  ['summary','סיכום'],
+  ['rec','מומלץ לטיפול בריפוי בעיסוק'],
+  ['goals','מטרות'],
+  ['freq','תדירות'],['dur','משך הטיפול'],['fmt','מתכונת'],
+  ['recs','המלצות נוספות'],
+  ['famResp','תגובת המשפחה לתוכנית המוצעת'],
+];
+const POLISH_KEYS = ['background','prev','family','parents','school','f_beh','f_gm','f_fm','f_wr','f_cog','f_play','f_sens','summary'];
+
+// =====================================================================
+//  רינדור הטופס
+// =====================================================================
+const OPT = {};   // id -> {key: {label, phrase}}
+const $ = id => document.getElementById(id);
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function renderItem(it){
+  if (it.type === 'row') return '<div class="row">' + it.items.map(renderItem).join('') + '</div>';
+  const lbl = it.label ? '<span class="lbl">' + esc(it.label) + '</span>' : '';
+  const hint = it.hint ? '<p class="hint">' + esc(it.hint) + '</p>' : '';
+  if (it.opts){ OPT[it.id] = {}; it.opts.forEach(o => OPT[it.id][o[0]] = {label:o[1], phrase:o[2] || o[1]}); }
+  switch (it.type){
+    case 'select':
+      return '<div class="ctl">' + lbl + '<select id="' + it.id + '">' + it.opts.map(o => '<option value="' + esc(o[0]) + '">' + esc(o[1]) + '</option>').join('') + '</select>' + hint + '</div>';
+    case 'chips':
+      return '<div class="ctl">' + lbl + '<div class="chips" data-chips="' + it.id + '">' + it.opts.map(o => '<label><input type="checkbox" value="' + esc(o[0]) + '">' + esc(o[1]) + '</label>').join('') + '</div>' + hint + '</div>';
+    case 'text': return '<div class="ctl">' + lbl + '<input type="text" id="' + it.id + '">' + hint + '</div>';
+    case 'number': return '<div class="ctl">' + lbl + '<input type="number" id="' + it.id + '">' + hint + '</div>';
+    case 'textarea': return '<div class="ctl">' + lbl + '<textarea id="' + it.id + '"></textarea>' + hint + '</div>';
+    case 'scores':
+      return '<div class="ctl">' + lbl + '<table class="sc"><tr><th>מדד</th><th>אחוזון</th>' + (it.noStd ? '' : '<th>ציון תקן</th>') + '</tr>' +
+        it.rows.map(r => '<tr><td>' + esc(r[1]) + '</td><td><input type="number" min="0" max="100" id="' + it.id + '_' + r[0] + '_p"></td>' + (it.noStd ? '' : '<td><input type="number" id="' + it.id + '_' + r[0] + '_s"></td>') + '</tr>').join('') +
+        '</table><p class="hint">הניסוח לפי אחוזון נוצר אוטומטית ואפשר לערוך אותו בשדה הפלט.</p></div>';
+    case 'ayres':
+      return '<div class="ctl">' + lbl + '<table class="sc">' + AYRES_ITEMS.map(r => '<tr><td>' + esc(r[1]) + '</td><td><select id="ay_' + r[0] + '">' + AYRES_LEVELS.map(l => '<option value="' + l[0] + '">' + l[1] + '</option>').join('') + '</select></td></tr>').join('') + '</table></div>';
+    case 'sp2':
+      return '<div class="ctl">' + lbl + '<table class="sc"><tr><th colspan="2">רביעים</th></tr>' + SP2_QUADS.map(r => spRow('sq_' + r[0], r[1])).join('') +
+        '<tr><th colspan="2">תחומי חישה</th></tr>' + SP2_SECTIONS.map(r => spRow('ss_' + r[0], r[1])).join('') + '</table></div>';
+    case 'sensory':
+      return '<div class="ctl">' + lbl + '<table class="sc">' + SENS_MOD.map(r => '<tr><td style="width:70px">' + r[1] + '</td><td><select id="ps_' + r[0] + '"><option value=""></option><option value="none">ללא רגישות</option><option value="sens">רגישות</option><option value="seek">חיפוש תחושה</option></select></td><td><input type="text" id="psn_' + r[0] + '" placeholder="פירוט"></td></tr>').join('') + '</table></div>';
+    case 'goals':
+      return '<div class="ctl"><span class="lbl">בנק מטרות (סדר הבחירה = סדר המטרות)</span><div class="chips" id="goalChips">' + GOALS.map(g => '<label><input type="checkbox" value="' + g[0] + '">' + esc(g[1]) + '</label>').join('') + '</div></div>';
+  }
+  return '';
+}
+function spRow(id, label){ return '<tr><td>' + esc(label) + '</td><td><select id="' + id + '">' + SP2_LEVELS.map(l => '<option value="' + l[0] + '">' + l[1] + '</option>').join('') + '</select></td></tr>'; }
+
+function renderForm(){
+  $('tabs').innerHTML = TABS.map((s,i) => '<button data-tab="' + s.id + '"' + (i===0?' class="on"':'') + '>' + esc(s.title) + '</button>').join('');
+  $('form').innerHTML = TABS.map((s,i) => '<div class="sec' + (i===0?' on':'') + '" id="' + s.id + '">' +
+    (s.html || s.cards.map(c => '<div class="card"><h3>' + esc(c.title) + '</h3>' + c.items.map(renderItem).join('') + '</div>').join('')) + '</div>').join('');
+  $('tabs').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.sec').forEach(x => x.classList.toggle('on', x.id === b.dataset.tab));
+  });
+}
+
+// =====================================================================
+//  קריאת הטופס ובניית הטקסט
+// =====================================================================
+let goalOrder = [];
+function val(id){ const el = $(id); return el ? el.value.trim() : ''; }
+function chips(id){ const box = document.querySelector('[data-chips="' + id + '"]'); return box ? [...box.querySelectorAll('input:checked')].map(i => i.value) : []; }
+function ph(id, key){ return OPT[id] && OPT[id][key] ? OPT[id][key].phrase : ''; }
+function phs(id){ return chips(id).map(k => ph(id, k)); }
+function G(s){ const f = val('gender') === 'f'; return s.replace(/\{([^|{}]*)\|([^|{}]*)\}/g, (m,a,b) => f ? b : a); }
+function joinList(arr){ arr = arr.filter(Boolean); if (arr.length < 2) return arr.join(''); return arr.slice(0,-1).join(', ') + ' ו' + arr[arr.length-1]; }
+function sentences(arr){ return arr.filter(Boolean).map(s => s.trim().replace(/[.\s]+$/,'') + '.').join(' '); }
+function cap(arr){ return arr.filter(Boolean).join('\n'); }
+function ageNum(){ const y = val('ageY'), m = val('ageM'); if (!y) return ''; return y + (m && m !== '0' ? '.' + m : ''); }
+function isToddler(){ const y = parseInt(val('ageY'),10); return !isNaN(y) && y < 3; }
+
+function pctPhrase(p){
+  p = Number(p);
+  if (p <= 15) return 'מתחת לטווח הנורמה לגילו';
+  if (p <= 24) return 'בטווח הנורמה לגילו, בגבול התחתון';
+  if (p <= 49) return 'בטווח הנורמה לגילו, מתחת לממוצע';
+  if (p <= 75) return 'בטווח הנורמה לגילו';
+  if (p <= 91) return 'בטווח הנורמה הגבוה לגילו';
+  return 'מעל לטווח הנורמה לגילו';
+}
+function mapPhrase(p){
+  p = Number(p);
+  if (p <= 5) return 'בטווח האדום, המעיד על קושי משמעותי';
+  if (p <= 25) return 'בטווח הצהוב, המעיד על קושי קל';
+  return 'בטווח הירוק, התואם לגילו';
+}
+
+function openingSentence(){
+  const a = ageNum();
+  const noun = isToddler() ? '{פעוט מקסים|פעוטה מקסימה}' : '{ילד מקסים|ילדה מקסימה}';
+  const ageTxt = a ? ' {בן|בת} ' + a + (isToddler() ? ' שנים' : '') : '';
+  const joint = chips('joint').length ? 'משותף' : 'בריפוי בעיסוק';
+  const ref = val('ref') ? ' ' + ph('ref', val('ref')) : '';
+  const rs = phs('reasons');
+  return G('[שם] ' + noun + ageTxt + '. {הגיע|הגיעה} לאבחון ' + joint + ref + (rs.length ? ' בשל ' + joinList(rs) : '') + '.');
+}
+
+const B = {};
+B.tools = () => cap(phs('tools'));
+B.background = () => {
+  const out = [openingSentence()];
+  const birth = [];
+  if (val('week')){
+    let s = '{נולד|נולדה} בשבוע ' + val('week') + ({cs:' בניתוח קיסרי', normal:' בלידה רגילה'}[val('btype')] || '');
+    if (val('weight')) s += ', במשקל ' + val('weight') + ' ק"ג';
+    s += {complex:', לאחר היריון מורכב', ok:', לאחר היריון תקין'}[val('preg')] || '';
+    birth.push(s);
+  }
+  if (val('miles') === 'delay') birth.push('נצפה עיכוב בהשגת אבני הדרך ההתפתחותיות');
+  if (val('miles') === 'ok') birth.push('{השיג|השיגה} אבני דרך התפתחותיות במועד');
+  if (val('health') === 'ok') birth.push('{בריא|בריאה} בדרך כלל');
+  if (val('hv') === 'ok') birth.push('בדיקות שמיעה וראייה בוצעו ונמצאו תקינות');
+  if (val('hv') === 'none') birth.push('עדיין לא בוצעו בדיקות שמיעה וראייה');
+  out.push(G(sentences(birth)));
+  if (val('bgNote')) out.push(val('bgNote'));
+  return out.filter(Boolean).join('\n');
+};
+B.prev = () => val('prevTx');
+B.family = () => {
+  const s = [];
+  const sib = val('sib'), n = val('sibN');
+  if (sib === 'only') s.push('[שם] {הבן היחיד להוריו|הבת היחידה להוריה}');
+  else if (sib){
+    const pos = {first:'{הבכור|הבכורה}', mid:'{אמצעי|אמצעית}', young:'{הצעיר|הצעירה}'}[sib];
+    s.push('[שם] ' + pos + (n ? ' מבין ' + n + ' ילדים' : ' בין אחיו'));
+  }
+  if (val('lang') === 'bi') s.push('{גדל|גדלה} בבית דו-לשוני');
+  if (val('lang') === 'he') s.push('המשפחה דוברת עברית');
+  return [G(sentences(s)), val('famNote')].filter(Boolean).join('\n');
+};
+B.parents = () => {
+  const lines = [];
+  const g = phs('parGen'); if (g.length) lines.push(G('לפי דיווח ההורים, [שם] ' + joinList(g) + '.'));
+  const sens = SENS_MOD.map(m => {
+    const v = val('ps_' + m[0]), n = val('psn_' + m[0]);
+    if (!v && !n) return '';
+    const t = {none:'ללא רגישות', sens:'קיימת רגישות', seek:'חיפוש תחושה'}[v] || '';
+    return m[1] + '- ' + [t, n].filter(Boolean).join(', ');
+  }).filter(Boolean);
+  if (sens.length) lines.push(sens.join('\n'));
+  [['eat','אכילה'],['sleep','שינה'],['dress','לבוש'],['playHome','משחק']].forEach(x => { if (val(x[0])) lines.push(x[1] + ': ' + val(x[0])); });
+  if (val('parNote')) lines.push(val('parNote'));
+  return lines.join('\n');
+};
+B.school = () => {
+  const s = [];
+  const fr = val('frame');
+  if (fr){
+    const name = OPT.frame[fr].label;
+    s.push('[שם] {לומד|לומדת} כיום ' + (fr === 'school' && val('grade') ? 'בכיתה ' + val('grade') : 'ב' + name));
+  }
+  const POS = ['coop','good','yard'];
+  const sc = chips('schGen');
+  const pos = sc.filter(k => POS.includes(k)).map(k => ph('schGen', k));
+  const neg = sc.filter(k => !POS.includes(k)).map(k => ph('schGen', k));
+  if (pos.length) s.push('לפי דיווח המסגרת, [שם] ' + joinList(pos));
+  if (neg.length) s.push('מדווח על ' + joinList(neg));
+  return G(sentences(s)) + (val('schNote') ? '\n' + val('schNote') : '');
+};
+B.f_beh = () => {
+  const s = [];
+  const w = val('with');
+  const withTxt = {mom:' בליווי {אמו|אמה}', dad:' בליווי {אביו|אביה}', both:' בליווי {הוריו|הוריה}'}[w] || '';
+  if (w) s.push('[שם] {הגיע|הגיעה} לאבחון' + withTxt);
+  const ad = {fast:'{הסתגל|הסתגלה} לסיטואציה האבחונית במהירות', short:'{הסתגל|הסתגלה} לסיטואציה האבחונית לאחר זמן קצר',
+    med:'בתחילת האבחון {הראה|הראתה} צורך בזמן הסתגלות, {נעזר|נעזרה} בעידוד ותיווך על מנת להסתגל לסיטואציה האבחונית'}[val('adapt')];
+  const eye = {good:'{יצר|יצרה} קשר עין איכותי', short:'{יצר|יצרה} קשר עין איכותי לפרקים קצרים', incons:'קשר העין אינו עקבי', rare:'{יוצר|יוצרת} קשר עין לעיתים רחוקות'}[val('eye')];
+  const coop = {full:'{שיתף|שיתפה} פעולה באופן מלא', part:'{שיתף|שיתפה} פעולה באופן חלקי', low:'שיתוף הפעולה היה נמוך, ולכן לא ניתן היה להתרשם {מתפקודו|מתפקודה} באופן מלא'}[val('coop')];
+  [ad, eye, coop].forEach(x => x && s.push(x));
+  // קשב, מוסחות ותנועתיות מתחברים למשפט אחד כמו בדוחות
+  const bk = chips('beh');
+  const frag = ['dist','move'].filter(k => bk.includes(k)).map(k => ph('beh', k));
+  bk.filter(k => k !== 'dist' && k !== 'move').forEach(k => {
+    let p = ph('beh', k);
+    if (k === 'attShort' && frag.length){ p += ', ' + frag.join(', '); frag.length = 0; }
+    s.push(p);
+  });
+  if (frag.length) s.push('נצפו ' + frag.join(' ו'));
+  return G(sentences(s)) + (val('behNote') ? '\n' + val('behNote') : '');
+};
+B.f_gm = () => {
+  const out = [];
+  const g = phs('gm'); if (g.length) out.push(G(sentences(g)));
+  const ok = [], mild = [], sig = [];
+  AYRES_ITEMS.forEach(r => { const v = val('ay_' + r[0]); const n = r[1].replace(/\s*\(.*\)$/,''); if (v === 'ok') ok.push(n); if (v === 'mild') mild.push(n); if (v === 'sig') sig.push(n); });
+  if (ok.length || mild.length || sig.length){
+    const a = ['בתצפית הקלינית של איירס'];
+    const parts = [];
+    if (ok.length) parts.push('נמצאו תקינים: ' + ok.join(', '));
+    if (mild.length) parts.push('נצפה קושי קל ב: ' + mild.join(', '));
+    if (sig.length) parts.push('נצפה קושי משמעותי ב: ' + sig.join(', '));
+    out.push(a[0] + ' ' + parts.join('; ') + '.');
+  }
+  if (val('gmNote')) out.push(val('gmNote'));
+  return out.join('\n');
+};
+B.f_fm = () => {
+  const s = [];
+  const dom = {r:'דומיננטיות ידנית מבוססת בימין', l:'דומיננטיות ידנית מבוססת בשמאל', pref:'נצפתה העדפה לשימוש ביד ימין, דומיננטיות ידנית עדיין אינה מבוססת דיה', no:'דומיננטיות ידנית עדיין אינה מבוססת, {משתמש|משתמשת} בשתי הידיים לסירוגין'}[val('dom')];
+  if (dom) s.push(dom);
+  phs('fm').forEach(x => s.push(x));
+  const grip = {fist:'באחיזת אגרוף', palmar:'באחיזה פלמרית', digital:'באחיזה דיגיטלית', stat:'באחיזת טריפוד סטטית', dyn:'באחיזת טריפוד דינמית ויעילה', effort:'באחיזה מאומצת, תוך הפעלת לחץ מוגבר'}[val('grip')];
+  if (grip) s.push('{אוחז|אוחזת} את כלי הכתיבה ' + grip);
+  const draw = {scrib:'{נמצא|נמצאת} בשלב השרבוט', scribM:'{נמצא|נמצאת} בשלב השרבוט ו{נותן|נותנת} לשרבוט משמעות', lines:'{נמצא|נמצאת} בשלב קווי היסוד', mean:'{מצייר|מציירת} ציור חופשי בעל משמעות'}[val('draw')];
+  if (draw) s.push(draw);
+  const sh = chips('shapes').map(k => OPT.shapes[k].label);
+  if (sh.length) s.push((isToddler() ? '{מחקה|מחקה} ' : '{מעתיק|מעתיקה} ') + joinList(sh));
+  const out = [G(sentences(s))];
+  BEERY.forEach((r, i) => {
+    const p = val('beery_' + r[0] + '_p'), sd = val('beery_' + r[0] + '_s');
+    if (p === '') return;
+    const pre = i === 0 ? 'באבחון BEERY, בחלק הבודק ' : 'בחלק הבודק ';
+    out.push(G(pre + r[1] + ' {קיבל|קיבלה} ציון באחוזון ' + p + (sd ? ' (ציון תקן ' + sd + ')' : '') + ', ' + pctPhrase(p) + '.'));
+  });
+  if (val('fmNote')) out.push(val('fmNote'));
+  return out.filter(Boolean).join('\n');
+};
+B.f_wr = () => {
+  const s = phs('wr').slice();
+  const sp = {ok:'תקין', bitlow:'מעט נמוך מהמצופה', low:'נמוך מהמצופה'};
+  if (val('copyS') || val('copyT')) s.push('קצב הכתיבה בהעתקה ' + (sp[val('copyS')] || '') + (val('copyT') ? ' (' + val('copyT') + ' דק\')' : ''));
+  if (val('dictS') || val('dictT')) s.push('קצב הכתיבה בהכתבה ' + (sp[val('dictS')] || '') + (val('dictT') ? ' (' + val('dictT') + ' דק\')' : ''));
+  const out = [G(sentences(s))];
+  if (val('grade1')) out.push('במבדק הכתיבה לכיתות א\': ' + val('grade1'));
+  if (val('wrNote')) out.push(val('wrNote'));
+  return out.filter(Boolean).join('\n');
+};
+B.f_cog = () => {
+  const s = phs('cog').slice();
+  const bl = chips('blocks').map(k => OPT.blocks[k].label);
+  if (bl.length) s.push('בבנייה בקוביות {מחקה|מחקה} ' + joinList(bl));
+  const out = [G(sentences(s))];
+  const mp = MAP_IDX.filter(r => val('map_' + r[0] + '_p') !== '');
+  if (mp.length) out.push(G('במבחן MAP: ' + mp.map(r => 'ב' + r[1] + ' {קיבל|קיבלה} ציון ' + mapPhrase(val('map_' + r[0] + '_p')) + ' (אחוזון ' + val('map_' + r[0] + '_p') + ')').join('; ') + '.'));
+  if (val('cogNote')) out.push(val('cogNote'));
+  return out.filter(Boolean).join('\n');
+};
+B.f_play = () => {
+  const st = {explore:'{נמצא|נמצאת} בשלב המשחק לבד והחקירה', func:'{משחק|משחקת} באופן פונקציונלי בחפצים', symb:'{נמצא|נמצאת} בשלב המשחק הסימבולי הפשוט', symb2:'{משחק|משחקת} במשחקי דמיון ובמשחק סימבולי מורכב'}[val('playStage')];
+  const s = [st].concat(phs('play'));
+  return G(sentences(s)) + (val('playNote') ? '\n' + val('playNote') : '');
+};
+B.f_sens = () => {
+  const out = [];
+  const lev = k => (SP2_LEVELS.find(l => l[0] === k) || [,''])[1];
+  const q = SP2_QUADS.filter(r => val('sq_' + r[0])).map(r => r[1] + ': ' + lev(val('sq_' + r[0])));
+  const sc = SP2_SECTIONS.filter(r => val('ss_' + r[0])).map(r => r[1] + ': ' + lev(val('ss_' + r[0])));
+  if (q.length || sc.length){
+    let t = 'בשאלון הפרופיל החושי (SP2) שמילאו ההורים';
+    if (q.length) t += ', ברביעים התקבלו התוצאות הבאות- ' + q.join('; ');
+    if (sc.length) t += (q.length ? '. בתחומי החישה- ' : ', בתחומי החישה- ') + sc.join('; ');
+    out.push(t + '.');
+  }
+  if (val('sensConcl')) out.push(OPT.sensConcl[val('sensConcl')].label + '.');
+  if (val('sensNote')) out.push(val('sensNote'));
+  return out.join('\n');
+};
+function firstSentence(t){ if (!t) return ''; const line = t.split('\n')[0]; const m = line.match(/[^.]+\./g); return (m ? m.slice(0, 2).join('') : line).trim(); }
+B.summary = () => {
+  const out = [openingSentence()];
+  // משפט ההתנהגות בסיכום: מדלגים על "הגיע בליווי..."
+  const behS = (B.f_beh().split('\n')[0].match(/[^.]+\./g) || []).map(x => x.trim()).filter(x => !/לאבחון בליווי/.test(x));
+  if (behS.length) out.push(behS.slice(0, 2).join(' '));
+  const dom = [['בתחום המוטוריקה הגסה- ', B.f_gm()], ['בתחום המוטוריקה העדינה- ', B.f_fm()], ['בתחום הכתיבה- ', B.f_wr()], ['בתחום התפיסה והחשיבה- ', B.f_cog()], ['בתחום המשחק- ', B.f_play()], ['בתחום הוויסות החושי- ', B.f_sens()]];
+  dom.forEach(d => { const f = firstSentence(d[1]); if (f) out.push(d[0] + f.replace(/^\[שם\]\s*/,'')); });
+  return out.join('\n');
+};
+B.rec = () => val('recTx') ? OPT.recTx[val('recTx')].label : '';
+B.goals = () => goalOrder.map((k, i) => {
+  const g = GOALS.find(x => x[0] === k); if (!g) return '';
+  return 'מטרה ' + (i+1) + ':\n' + G(g[2]) + (g[3].length ? '\n' + g[3].map(x => '- ' + G(x)).join('\n') : '');
+}).concat(val('goalCustom') ? ['מטרה ' + (goalOrder.length + 1) + ':\n' + val('goalCustom')] : []).filter(Boolean).join('\n\n');
+B.freq = () => val('freq');
+B.dur = () => val('dur');
+B.fmt = () => val('fmt');
+B.recs = () => { const r = phs('recs').map(G); if (val('recCustom')) r.push(val('recCustom')); return r.map(x => '- ' + x).join('\n'); };
+B.famResp = () => val('famResp');
+
+// =====================================================================
+//  הצגת השם (במחשב בלבד) והסתרתו לפני שליחה
+// =====================================================================
+function nameList(){
+  const arr = [val('name')].concat(val('names2').split(/[,\n]+/).map(s => s.trim()));
+  return arr.map((n, i) => ({name:n, token: i === 0 ? '[שם]' : '[שם' + (i+1) + ']'})).filter(x => x.name.length >= 2);
+}
+function showNames(t){ nameList().forEach(x => { t = t.split(x.token).join(x.name); }); return t; }
+function escRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function hideNames(t){
+  nameList().sort((a,b) => b.name.length - a.name.length).forEach(x => {
+    const re = new RegExp('(?<![\\u05D0-\\u05EA])([ובלמהשכ]{0,3})' + escRe(x.name) + '(?![\\u05D0-\\u05EA])', 'g');
+    t = t.replace(re, (m, p) => p + x.token);
+  });
+  // ביטחון נוסף: תאריכים, טלפונים, מספרי זהות ומיילים
+  t = t.replace(/[\w.+\-]+@[\w\-]+(\.[\w\-]+)+/g, '[מייל]')
+       .replace(/(?<!\d)(?:\+972[\-\s]?|0)(?:5\d|7\d|[23489])[\-\s]?\d{3}[\-\s]?\d{4}(?!\d)/g, '[טלפון]')
+       .replace(/(?<!\d)\d{8,9}(?!\d)/g, '[מספר מזהה]')
+       .replace(/(?<!\d)\d{1,2}[.\/\-]\d{1,2}[.\/\-](?:\d{4}|\d{2})(?!\d|[.\/]\d)/g, '[תאריך]');
+  return t;
+}
+
+// =====================================================================
+//  שדות הפלט
+// =====================================================================
+const dirty = {};   // שדות שנערכו ידנית או נוסחו ע"י Claude
+const aiDone = {};
+function renderOut(){
+  $('out').innerHTML = FIELDS.map(f => '<div class="of" id="of_' + f[0] + '"><div class="t"><b>' + esc(f[1]) + '</b><span class="badge" id="bd_' + f[0] + '"></span>' +
+    '<button data-reset="' + f[0] + '" hidden>חזרה לאוטומטי</button><button data-copy="' + f[0] + '">העתקה</button></div><textarea id="o_' + f[0] + '"></textarea></div>').join('');
+  $('out').addEventListener('input', e => {
+    if (e.target.id && e.target.id.startsWith('o_')){ const k = e.target.id.slice(2); dirty[k] = true; aiDone[k] = false; markField(k); }
+  });
+  $('out').addEventListener('click', e => {
+    const c = e.target.getAttribute('data-copy'), r = e.target.getAttribute('data-reset');
+    if (c) copyText($('o_' + c).value, 'השדה הועתק');
+    if (r){ dirty[r] = false; aiDone[r] = false; update(); }
+  });
+}
+function markField(k){
+  const bd = $('bd_' + k), btn = document.querySelector('[data-reset="' + k + '"]');
+  bd.textContent = aiDone[k] ? 'נוסח ע"י Claude' : (dirty[k] ? 'נערך ידנית' : '');
+  bd.className = 'badge' + (aiDone[k] ? ' ai' : '');
+  btn.hidden = !dirty[k];
+}
+function autoSize(el){ el.style.height = 'auto'; el.style.height = Math.min(Math.max(el.scrollHeight + 2, 44), 420) + 'px'; }
+function update(){
+  FIELDS.forEach(f => {
+    const k = f[0], ta = $('o_' + k);
+    if (!dirty[k]) ta.value = showNames(B[k]() || '');
+    $('of_' + k).classList.toggle('empty', !ta.value.trim());
+    markField(k); autoSize(ta);
+  });
+  const missing = !val('name');
+  $('status').innerHTML = missing ? '<div class="warnbox">לא הוזן שם פרטי. בטקסט יופיע [שם], ואפשר להשלים אותו גם בסוף.</div>' : '';
+}
+
+// =====================================================================
+//  ניסוח בעזרת Claude (חיבור ישיר, אחרי הסתרת שמות ואישור)
+// =====================================================================
+// =====================================================================
+//  חיבור ישיר ל-Claude (בלי n8n). המפתח נשמר מוצפן בדפדפן ונפתח עם קוד.
+// =====================================================================
+const API_URL = 'https://api.anthropic.com/v1/messages';
+const KEY_STORE = 'ot_form_api_key_v1';
+const MODEL_STORE = 'ot_form_model_v1';
+const DEFAULT_MODEL = 'claude-sonnet-5';
+let apiKey = null;        // בזיכרון בלבד, נמחק בסגירת הדף
+let keyAfter = null;      // פעולה להמשיך אחרי פתיחת המפתח
+
+const b64 = u8 => { let s = ''; u8.forEach(c => s += String.fromCharCode(c)); return btoa(s); };
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+function store(k, v){ try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); return true; } catch(e){ return false; } }
+function load(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+function hasStoredKey(){ return !!load(KEY_STORE); }
+function getModel(){ return load(MODEL_STORE) || DEFAULT_MODEL; }
+
+async function deriveAes(code, salt){
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2', salt, iterations:310000, hash:'SHA-256'}, base, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
+}
+async function saveKey(key, code){
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const k = await deriveAes(code, salt);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM', iv}, k, new TextEncoder().encode(key)));
+  if (!store(KEY_STORE, JSON.stringify({v:1, salt:b64(salt), iv:b64(iv), ct:b64(ct)}))) throw new Error('הדפדפן לא מאפשר שמירה. המפתח יישאר פתוח רק עד סגירת הדף.');
+}
+async function unlockKey(code){
+  const s = JSON.parse(load(KEY_STORE));
+  const k = await deriveAes(code, unb64(s.salt));
+  const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv:unb64(s.iv)}, k, unb64(s.ct));   // נכשל אם הקוד שגוי
+  return new TextDecoder().decode(pt);
+}
+
+function keyStatus(){
+  const b = $('keyBtn');
+  if (apiKey){ b.textContent = 'מפתח: פתוח'; b.classList.add('ok'); }
+  else { b.textContent = hasStoredKey() ? 'מפתח: נעול' : 'הגדרת מפתח API'; b.classList.remove('ok'); }
+}
+function openModal(html){ $('modal').innerHTML = html; $('modalWrap').hidden = false; const f = $('modal').querySelector('input'); if (f) f.focus(); }
+function closeModal(){ $('modalWrap').hidden = true; $('modal').innerHTML = ''; }
+
+function openKeyPanel(after, msg){
+  keyAfter = after || null;
+  let h = '<h3>מפתח API של Claude</h3>';
+  if (apiKey){
+    h += '<p>המפתח פתוח, ויינעל כשתסגרי את הדף.</p><div class="mrow"><button class="btn" data-k="lock">נעילה עכשיו</button><button class="btn" data-k="forget">מחיקת המפתח השמור</button><button class="btn" data-k="close">סגירה</button></div>';
+  } else if (hasStoredKey()){
+    h += '<p>הקלידי את הקוד כדי לפתוח את המפתח השמור במחשב הזה.</p><input type="password" id="kCode" autocomplete="off" placeholder="קוד">' +
+      '<div class="mrow"><button class="btn primary" data-k="unlock">פתיחה</button><button class="btn" data-k="forget">שכחתי את הקוד / החלפת מפתח</button><button class="btn" data-k="close">ביטול</button></div>';
+  } else {
+    h += '<p>המפתח יישמר במחשב הזה בלבד, מוצפן בקוד שתבחרי. בפעמים הבאות תקלידי רק את הקוד.</p>' +
+      '<label class="lbl">מפתח API (מתחיל ב-sk-ant-)</label><input type="password" id="kKey" autocomplete="off">' +
+      '<label class="lbl">קוד (לפחות 6 תווים, עדיף עם אותיות)</label><input type="password" id="kCode" autocomplete="off">' +
+      '<label class="lbl">הקלדת הקוד שוב</label><input type="password" id="kCode2" autocomplete="off">' +
+      '<p class="hint">מומלץ ליצור ב-console.anthropic.com מפתח נפרד לטופס, עם תקרת הוצאה חודשית. הקוד מגן מפני שימוש מזדמן במחשב, לא מפני פריצה מכוונת.</p>' +
+      '<div class="mrow"><button class="btn primary" data-k="save">שמירה</button><button class="btn" data-k="close">ביטול</button></div>';
+  }
+  h += '<details class="adv"><summary>הגדרות מתקדמות</summary><label class="lbl">מודל</label><input type="text" id="kModel" value="' + esc(getModel()) + '"><p class="hint">ברירת המחדל: ' + DEFAULT_MODEL + '</p></details>';
+  if (msg) h += '<div class="warnbox" style="margin-top:10px">' + esc(msg) + '</div>';
+  openModal(h);
+}
+
+async function keyAction(act){
+  const v = id => ($(id) ? $(id).value.trim() : '');
+  if ($('kModel')){ const m = v('kModel'); store(MODEL_STORE, m && m !== DEFAULT_MODEL ? m : null); }
+  try {
+    if (act === 'close'){ closeModal(); keyAfter = null; return; }
+    if (act === 'lock'){ apiKey = null; keyStatus(); closeModal(); flash('המפתח ננעל'); return; }
+    if (act === 'forget'){
+      if (!confirm('למחוק את המפתח השמור מהמחשב הזה? תצטרכי להזין אותו מחדש.')) return;
+      store(KEY_STORE, null); apiKey = null; keyStatus(); openKeyPanel(keyAfter); return;
+    }
+    if (act === 'unlock'){
+      try { apiKey = await unlockKey(v('kCode')); } catch(e){ openKeyPanel(keyAfter, 'הקוד שגוי.'); return; }
+    }
+    if (act === 'save'){
+      const key = v('kKey'), c1 = v('kCode'), c2 = v('kCode2');
+      if (!/^sk-ant-/.test(key)) { openKeyPanel(keyAfter, 'המפתח לא נראה כמו מפתח של Anthropic (sk-ant-...).'); return; }
+      if (c1.length < 6) { openKeyPanel(keyAfter, 'הקוד צריך להיות לפחות 6 תווים.'); return; }
+      if (c1 !== c2) { openKeyPanel(keyAfter, 'שני הקודים לא זהים.'); return; }
+      try { await saveKey(key, c1); } catch(e){ flash(e.message); }
+      apiKey = key;
+    }
+    keyStatus(); closeModal();
+    const next = keyAfter; keyAfter = null;
+    if (next) next();
+  } catch (e){ openKeyPanel(keyAfter, e.message); }
+}
+
+// תצוגה מקדימה: מה בדיוק יוצא מהמחשב. השליחה רק אחרי אישור.
+function confirmSend(title, text){
+  return new Promise(resolve => {
+    const shown = esc(text).replace(/\[[^\]\n]{1,24}\]/g, m => '<span class="tok">' + m + '</span>');
+    openModal('<h3>' + esc(title) + '</h3><p class="hint">זה הטקסט המלא שיישלח ל-Claude. תגיות מסומנות הן פרטים שהוסרו. ודאי שאין כאן שמות, מוסדות או פרטים מזהים אחרים.</p>' +
+      '<div class="sendprev">' + shown + '</div><div class="mrow"><button class="btn primary" data-send="yes">שליחה</button><button class="btn" data-send="no">ביטול</button></div>');
+    $('modal').onclick = e => { const a = e.target.getAttribute && e.target.getAttribute('data-send'); if (!a) return; $('modal').onclick = null; closeModal(); resolve(a === 'yes'); };
+  });
+}
+
+async function callClaude(system, user){
+  let res;
+  try {
+    res = await fetch(API_URL, {method:'POST', headers:{
+      'content-type':'application/json', 'x-api-key':apiKey, 'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({model:getModel(), max_tokens:4000, system, messages:[{role:'user', content:user}]})});
+  } catch (e){ throw new Error('אין חיבור ל-Claude. בדקי את חיבור האינטרנט.'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok){
+    const m = (data.error && data.error.message) || '';
+    if (res.status === 401) throw new Error('המפתח לא תקין או בוטל (401). פתחי את "הגדרת מפתח" והזיני מפתח חדש.');
+    if (res.status === 429) throw new Error('יותר מדי בקשות או שנגמרה המכסה (429). נסי שוב בעוד דקה, ובדקי את תקרת ההוצאה.');
+    throw new Error('Claude החזיר שגיאה ' + res.status + (m ? ': ' + m : ''));
+  }
+  return (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+}
+// =====================================================================
+//  טיוטה מוצפנת: שמירה לקובץ ופתיחה ממנו (למעבר בין טלפון למחשב)
+// =====================================================================
+const DRAFT_SKIP = ['imFiles', 'imPaste', 'imExtra', 'kKey', 'kCode', 'kCode2', 'kModel', 'dPass', 'dPass2'];
+function collectState(){
+  const st = {v:1, ctl:{}, chips:{}, goals:goalOrder.slice(), out:{}};
+  document.querySelectorAll('header input[id], header select[id], #form input[id], #form select[id], #form textarea[id]').forEach(el => {
+    if (DRAFT_SKIP.includes(el.id) || el.type === 'file' || el.type === 'checkbox') return;
+    if (el.value !== '') st.ctl[el.id] = el.value;
+  });
+  document.querySelectorAll('[data-chips]').forEach(box => {
+    const k = [...box.querySelectorAll('input:checked')].map(i => i.value);
+    if (k.length) st.chips[box.getAttribute('data-chips')] = k;
+  });
+  FIELDS.forEach(f => { if (dirty[f[0]]) st.out[f[0]] = {t: $('o_' + f[0]).value, ai: !!aiDone[f[0]]}; });
+  return st;
+}
+function hasContent(){ const s = collectState(); return Object.keys(s.chips).length || s.goals.length || Object.keys(s.ctl).some(k => k !== 'gender'); }
+function restoreState(st){
+  document.querySelectorAll('[data-chips] input, #goalChips input').forEach(i => i.checked = false);
+  document.querySelectorAll('header input[id], #form input[id], #form select[id], #form textarea[id]').forEach(el => {
+    if (DRAFT_SKIP.includes(el.id) || el.type === 'file' || el.type === 'checkbox') return;
+    el.value = el.tagName === 'SELECT' ? (el.options[0] ? el.options[0].value : '') : '';
+  });
+  Object.keys(st.ctl || {}).forEach(id => { const el = $(id); if (el) el.value = st.ctl[id]; });
+  Object.keys(st.chips || {}).forEach(id => { const box = document.querySelector('[data-chips="' + id + '"]'); if (box) st.chips[id].forEach(k => { const i = box.querySelector('input[value="' + CSS.escape(k) + '"]'); if (i) i.checked = true; }); });
+  goalOrder = (st.goals || []).filter(k => GOALS.some(g => g[0] === k));
+  goalOrder.forEach(k => { const i = document.querySelector('#goalChips input[value="' + CSS.escape(k) + '"]'); if (i) i.checked = true; });
+  FIELDS.forEach(f => { dirty[f[0]] = false; aiDone[f[0]] = false; });
+  update();
+  Object.keys(st.out || {}).forEach(k => { const ta = $('o_' + k); if (!ta) return; ta.value = st.out[k].t; dirty[k] = true; aiDone[k] = !!st.out[k].ai; markField(k); autoSize(ta); });
+}
+async function encryptJson(obj, pass){
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const k = await deriveAes(pass, salt);
+  const ct = new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM', iv}, k, new TextEncoder().encode(JSON.stringify(obj))));
+  return JSON.stringify({type:'ot-report-draft', v:1, salt:b64(salt), iv:b64(iv), ct:b64(ct)});
+}
+async function decryptJson(text, pass){
+  const f = JSON.parse(text);
+  if (f.type !== 'ot-report-draft') throw new Error('הקובץ אינו טיוטה של הטופס');
+  const k = await deriveAes(pass, unb64(f.salt));
+  const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv:unb64(f.iv)}, k, unb64(f.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+function saveDraft(){
+  if (!hasContent()){ flash('אין עדיין מה לשמור'); return; }
+  openModal('<h3>שמירת טיוטה</h3><p>הטיוטה נשמרת כקובץ מוצפן בסיסמה. אפשר להעביר אותו לטלפון או למחשב אחר, ולפתוח שם עם אותה סיסמה. בלי הסיסמה אי אפשר לקרוא אותו, ושם הקובץ לא כולל את שם המטופל.</p>' +
+    '<label class="lbl">סיסמה לטיוטה (לפחות 6 תווים)</label><input type="password" id="dPass" autocomplete="off">' +
+    '<label class="lbl">הקלדת הסיסמה שוב</label><input type="password" id="dPass2" autocomplete="off">' +
+    '<div class="mrow"><button class="btn primary" data-d="save">שמירה</button><button class="btn" data-d="close">ביטול</button></div><div id="dMsg"></div>');
+}
+let draftFileText = null;
+function openDraftPick(){ $('draftFile').value = ''; $('draftFile').click(); }
+async function onDraftFile(){
+  const f = $('draftFile').files[0]; if (!f) return;
+  draftFileText = await f.text();
+  openModal('<h3>פתיחת טיוטה</h3><p>' + esc(f.name) + '</p>' + (hasContent() ? '<div class="warnbox">הטיוטה תחליף את מה שממולא כרגע בטופס.</div>' : '') +
+    '<label class="lbl">סיסמת הטיוטה</label><input type="password" id="dPass" autocomplete="off">' +
+    '<div class="mrow"><button class="btn primary" data-d="open">פתיחה</button><button class="btn" data-d="close">ביטול</button></div><div id="dMsg"></div>');
+}
+async function draftAction(act){
+  const msg = t => { $('dMsg').innerHTML = '<div class="warnbox" style="margin-top:10px">' + esc(t) + '</div>'; };
+  if (act === 'close'){ closeModal(); draftFileText = null; return; }
+  if (act === 'save'){
+    const p1 = $('dPass').value, p2 = $('dPass2').value;
+    if (p1.length < 6) return msg('הסיסמה צריכה להיות לפחות 6 תווים.');
+    if (p1 !== p2) return msg('שתי הסיסמאות לא זהות.');
+    const data = await encryptJson(collectState(), p1);
+    const d = new Date(), pad = n => String(n).padStart(2, '0');
+    const name = 'טיוטת_דוח_' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + '_' + pad(d.getHours()) + pad(d.getMinutes()) + '.otdraft';
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], {type:'application/octet-stream'})); a.download = name;
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+    closeModal(); flash('הטיוטה נשמרה בתיקיית ההורדות');
+  }
+  if (act === 'open'){
+    let st;
+    try { st = await decryptJson(draftFileText, $('dPass').value); }
+    catch (e){ return msg(e.message.includes('אינו') ? e.message : 'הסיסמה שגויה או שהקובץ פגום.'); }
+    restoreState(st); closeModal(); draftFileText = null; flash('הטיוטה נפתחה');
+  }
+}
+
+function parseJsonReply(t){ const m = t.match(/\{[\s\S]*\}/); return JSON.parse(m ? m[0] : t); }
+function fieldTitle(k){ const f = FIELDS.find(x => x[0] === k); return f ? f[1] : k; }
+
+const STYLE_GUIDE = `אתה עוזר למרפאה בעיסוק במכון להתפתחות הילד בישראל לנסח שדות של דוח סיכום אבחון שמוזן למערכת Cliks.
+קיבלת שדות שכבר מכילים את הממצאים. התפקיד שלך הוא ללטש את הניסוח לפרוזה רציפה ומקצועית בסגנון של המכון, ולכתוב סיכום.
+
+כללי ברזל:
+1. אסור להוסיף ממצא, אבחנה, ציון או פרט שלא מופיע בשדות. אם שדה ריק, החזר אותו ריק.
+2. אסור לשנות ציונים, אחוזונים, זמנים או מספרים.
+3. תגיות כמו [שם], [שם2], [תאריך] הן פרטים שהוסרו. העתק אותן בדיוק כמו שהן, במקומות המתאימים.
+4. שמור על המגדר שצוין לאורך כל הטקסט.
+5. אל תקבע אבחנה רפואית. תאר תפקוד.
+
+סגנון המכון:
+- גוף שלישי, זמן הווה בתיאור תפקוד ("מראה", "נצפה", "ניכר", "בולט", "עולה רושם", "נראה כי"), עבר בתיאור מהלך האבחון ("הגיע", "שיתף פעולה").
+- משפטים קליניים, תמציתיים וחמים. תיאורים כמו "ילד מקסים", "ילדה מתוקה" מקובלים בפתיחה.
+- ניסוחים אופייניים: "תואם גיל", "בטווח הנורמה לגילו", "בהתאם למצופה בגילו", "לצד צורך בתיווך", "ייתכן גם על רקע קשבי", "עם זאת,".
+- רקע: נפתח במשפט "[שם] ילד מקסים בן 4.1. הגיע לאבחון בריפוי בעיסוק בהפניית ... בשל ...", ואחריו נתוני לידה, התפתחות ובריאות.
+- ממצאים: פסקה רציפה לכל תחום. אפשר להשתמש בתבנית "בתחום X- ..." כשמתאים.
+- Beery: "באבחון BEERY, בחלק הבודק אינטגרציה ויזו-מוטורית קיבל ציון באחוזון 30, בטווח הנורמה לגילו, מתחת לממוצע."
+- סיכום: חוזר על משפט הפתיחה, משפט על ההתנהגות ושיתוף הפעולה באבחון, ואחריו תחום אחר תחום בתבנית "בתחום המוטורי- ...", "בתחום התפיסה והחשיבה- ...". 4-8 משפטים, בלי מידע שלא מופיע בממצאים.
+
+החזר אך ורק אובייקט JSON תקין עם אותם מפתחות שקיבלת, בלי טקסט נוסף.`;
+
+async function polish(){
+  const payload = {};
+  POLISH_KEYS.forEach(k => { const v = $('o_' + k).value.trim(); if (v) payload[k] = hideNames(v); });
+  if (!Object.keys(payload).length){ flash('אין עדיין טקסט לניסוח'); return; }
+  // בדיקת ביטחון: השם לא אמור להופיע בשום מקום במה שנשלח
+  const blob = JSON.stringify(payload);
+  const leak = nameList().find(x => blob.includes(x.name));
+  if (leak){ $('status').innerHTML = '<div class="warnbox">הניסוח בוטל: נמצא שם בטקסט שעמד להישלח. בדקי את השדות.</div>'; return; }
+  const user = 'מגדר: ' + (val('gender') === 'f' ? 'בת' : 'בן') + '. קבוצת גיל: ' + (isToddler() ? 'פעוט' : 'ילד') + '.\nהשדות:\n' + JSON.stringify(payload, null, 2);
+  if (!apiKey){ openKeyPanel(polish); return; }
+  const preview = user.split('\n')[0] + '\n\n' + Object.keys(payload).map(k => '— ' + fieldTitle(k) + ' —\n' + payload[k]).join('\n\n');
+  if (!(await confirmSend('ניסוח בעזרת Claude', preview))) return;
+  const btn = $('polish'); btn.disabled = true; btn.textContent = 'מנסח... (עד דקה)';
+  try {
+    const obj = parseJsonReply(await callClaude(STYLE_GUIDE, user));
+    let n = 0;
+    POLISH_KEYS.forEach(k => {
+      if (typeof obj[k] === 'string' && obj[k].trim() && payload[k] !== undefined){
+        $('o_' + k).value = showNames(obj[k].trim()); dirty[k] = true; aiDone[k] = true; markField(k); autoSize($('o_' + k)); n++;
+      }
+    });
+    $('status').innerHTML = '<div class="okbox">נוסחו ' + n + ' שדות. זו טיוטה: קראי ואשרי כל שדה לפני ההדבקה ב-Cliks.</div>';
+  } catch (err){
+    $('status').innerHTML = '<div class="warnbox">הניסוח נכשל: ' + esc(err.message) + ' הטקסט האוטומטי נשאר כמו שהוא.</div>';
+  } finally { btn.disabled = false; btn.textContent = 'ניסוח בעזרת Claude'; }
+}
+
+// =====================================================================
+//  ייבוא מקבצים: קריאה מקומית, הסרת פרטים מזהים, ומילוי שדות
+// =====================================================================
+const DEID = (function(){
+
+var HEBC = '\\u05D0-\\u05EA';
+var NB = '(?<![' + HEBC + '])';      // אין אות עברית לפני
+var NA = '(?![' + HEBC + '])';       // אין אות עברית אחרי
+var PFX = '([ובלמהשכ]{0,3})';        // אותיות שימוש: ו, ב, ל, מ, ה, ש, כ
+
+var CITIES = ['ירושלים','תל אביב','תל אביב יפו','יפו','חיפה','ראשון לציון','פתח תקווה','אשדוד','נתניה','באר שבע','בני ברק','חולון','רמת גן','אשקלון','רחובות','בת ים','בית שמש','כפר סבא','הרצליה','חדרה','מודיעין','מודיעין מכבים רעות','מודיעין עילית','נצרת','לוד','רמלה','רעננה','ראש העין','רהט','הוד השרון','ביתר עילית','קרית גת','נהריה','קרית אתא','עפולה','קרית ביאליק','קרית מוצקין','קרית ים','קרית שמונה','קרית מלאכי','קרית אונו','קרית ארבע','קרית עקרון','קרית טבעון','אום אל פחם','יבנה','גבעתיים','אילת','אלעד','נס ציונה','עכו','אור יהודה','צפת','טבריה','כרמיאל','נוף הגליל','נצרת עילית','דימונה','טייבה','שפרעם','מעלה אדומים','סח\'נין','באקה אל גרביה','יהוד','יהוד מונוסון','אופקים','נתיבות','שדרות','גבעת שמואל','טמרה','מגדל העמק','אריאל','ערד','ירוחם','מצפה רמון','בית שאן','קצרין','טירת כרמל','נשר','יקנעם','זכרון יעקב','פרדס חנה','כרכור','בנימינה','אור עקיבא','קיסריה','עתלית','אבן יהודה','כפר יונה','קדימה צורן','צורן','תל מונד','רמת השרון','כפר שמריהו','סביון','שוהם','גני תקווה','באר יעקב','מזכרת בתיה','גדרה','גן יבנה','קרית עקרון','גבעת זאב','אפרת','קרני שומרון','עמנואל','אלפי מנשה','קדומים','מעלות','מעלות תרשיחא','שלומי','חצור הגלילית','ראש פינה','מטולה','עראבה','כפר קאסם','טירה','קלנסווה','ג\'לג\'וליה','כפר כנא','מגאר','דאלית אל כרמל','עספיא','ערערה','חורה','תל שבע','לקיה','כסיפה','עומר','להבים','מיתר','גבעת עדה','מבשרת ציון','צור הדסה','אבו גוש','בית אל','חריש','כוכב יאיר','צור יצחק','בית דגן','אזור','גבעת ברנר','כפר ורדים','כפר תבור','יוקנעם עילית'];
+// מילים שהן גם מילים נפוצות בדוחות ולכן לא נכללות: אזור, קדימה, טירה, נשר
+CITIES = CITIES.filter(function(c){ return ['אזור','טירה','נשר'].indexOf(c) < 0; });
+
+var LABELS = ['שם המטופל','שם המטופלת','שם הילד','שם הילדה','שם התלמיד','שם התלמידה','שם פרטי','שם משפחה','שם מלא','שם האב','שם האם','שם ההורים','שמות ההורים','שם המסגרת','שם הגן','שם בית הספר','שם המאבחנת','שם המטפלת','שם','הורים','האב','האם','אב','אם','כתובת','כתובת מגורים','מקום מגורים','יישוב','ישוב','עיר','ת"ז','ת.ז.','ת.ז','תעודת זהות','מספר זהות','מס\' זהות','טלפון','טל\'','נייד','פלאפון','דוא"ל','מייל','אימייל','תאריך לידה','ת. לידה','בית ספר','בי"ס','ביה"ס','גן','גן ילדים','מסגרת','מסגרת חינוכית','גננת','מחנכת','מורה','רופא','רופאה','רופא מטפל','רופאת ילדים','קופת חולים','קופ"ח','מפנה','גורם מפנה','הופנה על ידי','הופנתה על ידי','הופנה ע"י','הופנתה ע"י','מאבחנת','מטפלת','חתימה'];
+
+var MONTHS = 'ינואר|פברואר|מרץ|מרס|אפריל|מאי|יוני|יולי|אוגוסט|ספטמבר|אוקטובר|נובמבר|דצמבר';
+
+var CAT_LABELS = {child:'שם המטופל',family:'שם משפחה',relatives:'בני משפחה',places:'מקומות',insts:'מוסדות',extra:'אחר',labels:'שדות מזוהים',dates:'תאריכים',phones:'טלפונים',ids:'מספרי זהות',emails:'מיילים',address:'כתובות',cities:'יישובים',doctors:'רופאים',kupa:'קופות חולים'};
+
+function esc(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function normalize(s){ return (s||'').replace(/[״“”„]/g,'"').replace(/[׳‘’`]/g,"'").replace(/\r\n?/g,'\n').replace(/ /g,' '); }
+function termPattern(term){
+  var p = esc(normalize(term).trim());
+  p = p.replace(/קרית/g,'קרי?ית').replace(/תקווה/g,'תקו?וה');
+  p = p.replace(/[\s\-]+/g,'[\\s\\-]+');
+  return p;
+}
+function sentinel(i){ return '' + String.fromCharCode(0xE100 + i) + ''; }
+var SENT_RE = /([-])/g;
+
+function deidentify(raw, o){
+  var text = normalize(raw);
+  var items = [];
+  function put(orig, token, cat){ items.push({orig:orig, token:token, cat:cat}); return sentinel(items.length - 1); }
+
+  function terms(list, token, cat){
+    var pats = (list||[]).map(function(t){ return normalize(t).trim(); })
+      .filter(function(t){ return t.length >= 2; })
+      .sort(function(a,b){ return b.length - a.length; })
+      .map(termPattern);
+    if (!pats.length) return;
+    var re = new RegExp(NB + PFX + '(' + pats.join('|') + ')' + NA, 'g');
+    text = text.replace(re, function(m, pfx, core){ return pfx + put(core, token, cat); });
+  }
+  function whole(re, token, cat){
+    text = text.replace(re, function(m){ return put(m, token, cat); });
+  }
+
+  // 1. שדות עם תווית ("שם: ...")
+  if (o.labels){
+    var lab = LABELS.slice().sort(function(a,b){ return b.length - a.length; }).map(esc).join('|');
+    var reL = new RegExp('(^|\\t| {2,}|\\|)(\\s*(?:' + lab + ')\\s*[:：]\\s*)([^\\t\\n|]*?)(?=\\t| {2,}|\\||\\.\\s|\\n|$)', 'gm');
+    text = text.replace(reL, function(m, lead, label, val){
+      if (!val.trim()) return m;
+      return lead + label + put(val, '[הוסר]', 'labels');
+    });
+  }
+  // 2. פרטים שהוזנו ידנית
+  terms(o.child, '[שם הילד/ה]', 'child');
+  terms(o.family, '[שם משפחה]', 'family');
+  terms(o.relatives, '[שם בן משפחה]', 'relatives');
+  terms(o.places, '[מקום]', 'places');
+  terms(o.insts, '[מסגרת/מוסד]', 'insts');
+  terms(o.extra, '[הוסר]', 'extra');
+  // 3. זיהוי אוטומטי
+  if (o.emails) whole(/[\w.+\-]+@[\w\-]+(\.[\w\-]+)+/g, '[מייל]', 'emails');
+  if (o.address) whole(/(?:רחוב|רח'|שדרות|שד')\s+[א-ת"'\- ]{2,25}?\s*\d{1,4}(?:\s*[א-ת](?![א-ת]))?/g, '[כתובת]', 'address');
+  if (o.doctors){
+    text = text.replace(/(ד"ר|דר'|דוקטור|פרופ'|פרופסור)(\s+)([א-ת]+(?:['"][א-ת]+)?)/g, function(m, t, sp, name){ return t + sp + put(name, '[שם רופא]', 'doctors'); });
+  }
+  if (o.kupa){
+    var reK = new RegExp(NB + PFX + '(קופת חולים\\s+(?:כללית|מכבי|מאוחדת|לאומית)|שירותי בריאות כללית|מכבי שירותי בריאות|מכבי|מאוחדת)' + NA, 'g');
+    text = text.replace(reK, function(m, pfx, core){ return pfx + put(core, '[קופ"ח]', 'kupa'); });
+  }
+  if (o.cities) terms(CITIES, '[יישוב]', 'cities');
+  if (o.phones) whole(/(?<!\d)(?:\+972[\-\s]?|0)(?:5\d|7\d|[23489])[\-\s]?\d{3}[\-\s]?\d{4}(?!\d)/g, '[טלפון]', 'phones');
+  if (o.ids) whole(/(?<!\d)\d{8,9}(?!\d)/g, '[מספר מזהה]', 'ids');
+  if (o.dates){
+    whole(/(?<!\d)\d{1,2}[.\/\-]\d{1,2}[.\/\-](?:\d{4}|\d{2})(?!\d|[.\/]\d)/g, '[תאריך]', 'dates');
+    whole(/(?<![\d.])\d{1,2}[.\/]\d{4}(?!\d)/g, '[תאריך]', 'dates');
+    whole(new RegExp('(?<!\\d)\\d{1,2}\\s+[בל]?(?:' + MONTHS + ')(?:\\s*,?\\s*\\d{4})?' + NA, 'g'), '[תאריך]', 'dates');
+    text = text.replace(new RegExp(NB + '([ובלמה]{0,2})((?:' + MONTHS + ')\\s+\\d{4})', 'g'), function(m, pfx, core){ return pfx + put(core, '[תאריך]', 'dates'); });
+  }
+  return { text: text, items: items };
+}
+
+function toPlain(r){
+  return r.text.replace(SENT_RE, function(m, c){ return r.items[c.charCodeAt(0) - 0xE100].token; });
+}
+
+var FLAG_STOP = ['ילדים','חובה','טרום','הילדים','שלו','שלה','של','בו','בה','הוא','היא','רגיל','רגילה','מיוחד','מיוחדת','חינוך','ממלכתי','ממלכתית','דתי','דתית','יסודי','היסודי','שפה','תקשורת','עירוני','עירונית','פרטי','פרטית','ובבית','ובגן','בבית','והבית'];
+// מאתר מקומות חשודים בקטע טקסט (לבדיקה ידנית, לא מוסר אוטומטית)
+function findFlags(seg){
+  var out = [], m;
+  var reI = /(?:גן|גני|בית הספר|בית ספר|בי"ס|ביה"ס|מעון|תלמוד תורה|ת"ת|ישיבת|אולפנת|ממ"ד)\s+["']?([א-ת][א-ת"'\-]*)/g;
+  while ((m = reI.exec(seg))){
+    var w = m[1];
+    if (FLAG_STOP.indexOf(w) < 0){ var s = m.index + m[0].length - w.length; out.push([s, s + w.length]); }
+  }
+  var reN = /(?<!\d)\d{4,}(?!\d)/g;
+  while ((m = reN.exec(seg))) out.push([m.index, m.index + m[0].length]);
+  return out;
+}
+
+return {deidentify: deidentify, toPlain: toPlain, findFlags: findFlags, normalize: normalize};
+})();
+
+let importRaw = '';      // הטקסט המקורי מהקבצים (נשאר בדף בלבד)
+let importRes = null;    // אחרי הסרת פרטים מזהים
+let importSources = [];
+
+// ---- קריאת docx בלי ספריות: פענוח ה-zip ו-word/document.xml ----
+async function inflateRaw(bytes){
+  const ds = new DecompressionStream('deflate-raw');
+  const stream = new Blob([bytes]).stream().pipeThrough(ds);
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+async function docxText(buf){
+  const b = new Uint8Array(buf), dv = new DataView(buf);
+  let eocd = -1;
+  for (let i = b.length - 22; i >= Math.max(0, b.length - 66000); i--){ if (dv.getUint32(i, true) === 0x06054b50){ eocd = i; break; } }
+  if (eocd < 0) throw new Error('הקובץ אינו קובץ Word תקין (docx)');
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const dec = new TextDecoder('utf-8');
+  for (let n = 0; n < count; n++){
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+    const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+    const loc = dv.getUint32(p + 42, true);
+    const name = dec.decode(b.subarray(p + 46, p + 46 + nlen));
+    if (name === 'word/document.xml'){
+      const lnl = dv.getUint16(loc + 26, true), lxl = dv.getUint16(loc + 28, true);
+      const start = loc + 30 + lnl + lxl;
+      const data = b.subarray(start, start + csize);
+      const xmlBytes = method === 0 ? data : await inflateRaw(data);
+      return xmlToText(dec.decode(xmlBytes));
+    }
+    p += 46 + nlen + xlen + clen;
+  }
+  throw new Error('לא נמצא תוכן בקובץ ה-Word');
+}
+function xmlToText(xml){
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const out = [];
+  [...doc.getElementsByTagName('w:p')].forEach(par => {
+    let s = '';
+    par.querySelectorAll('*').forEach(el => {
+      if (el.tagName === 'w:t') s += el.textContent;
+      else if (el.tagName === 'w:tab') s += '\t';
+      else if (el.tagName === 'w:br') s += '\n';
+    });
+    out.push(s);
+  });
+  return out.join('\n').replace(/\n{3,}/g, '\n\n');
+}
+async function readAnyFile(f){
+  const ext = (f.name.split('.').pop() || '').toLowerCase();
+  if (ext === 'docx') return docxText(await f.arrayBuffer());
+  if (ext === 'txt'){
+    const buf = await f.arrayBuffer();
+    try { return new TextDecoder('utf-8', {fatal:true}).decode(buf); } catch(e){ return new TextDecoder('windows-1255').decode(buf); }
+  }
+  if (ext === 'pdf') throw new Error('קובצי PDF לא נקראים כאן. פתחי את הקובץ, העתיקי את הטקסט והדביקי בתיבה.');
+  if (ext === 'doc') throw new Error('קובץ Word ישן (doc). שמרי אותו מחדש כ-docx ונסי שוב.');
+  throw new Error('סוג קובץ לא נתמך');
+}
+
+async function importRead(){
+  const files = [...$('imFiles').files];
+  const parts = [], errs = [];
+  importSources = [];
+  for (const f of files){
+    try { const t = await readAnyFile(f); parts.push(t); importSources.push(f.name); }
+    catch(e){ errs.push(f.name + ': ' + e.message); }
+  }
+  if (val('imPaste')) { parts.push(val('imPaste')); importSources.push('טקסט מודבק'); }
+  importRaw = parts.join('\n\n');
+  $('imErr').innerHTML = errs.map(e => '<div class="warnbox">' + esc(e) + '</div>').join('');
+  if (!importRaw.trim()){ $('imPreview').innerHTML = '<span class="msg">לא נקרא טקסט.</span>'; importRes = null; return; }
+  importDeid();
+}
+
+function importDeid(){
+  if (!importRaw) return;
+  const t = hideNames(DEID.normalize(importRaw));
+  importRes = DEID.deidentify(t, {extra: list(val('imExtra')), labels:true, dates:true, phones:true, ids:true, emails:true, address:true, cities:true, doctors:true, kupa:true});
+  renderImportPreview();
+}
+function list(v){ return v.split(/[\n,،]+/).map(s => s.trim()).filter(Boolean); }
+
+const TOKEN_RE = /(\[שם\d*\]|\[תאריך\]|\[טלפון\]|\[מספר מזהה\]|\[מייל\])/;
+function renderImportPreview(){
+  const r = importRes;
+  const parts = r.text.split(/([-])/);
+  let html = '', flags = 0;
+  parts.forEach(p => {
+    if (/^[-]$/.test(p)){
+      const it = r.items[p.charCodeAt(1) - 0xE100];
+      html += '<span class="r" title="' + esc('מקור: ' + it.orig) + '">' + esc(it.token) + '</span>';
+      return;
+    }
+    p.split(TOKEN_RE).forEach(seg => {
+      if (TOKEN_RE.test(seg) && /^\[.*\]$/.test(seg)){ html += '<span class="r">' + esc(seg) + '</span>'; return; }
+      const fl = DEID.findFlags(seg); flags += fl.length;
+      let last = 0, m; const reW = /[א-ת][א-ת"'\-]*[א-ת]|[א-ת]|\d+/g;
+      while ((m = reW.exec(seg))){
+        const s = m.index, e = s + m[0].length;
+        html += esc(seg.slice(last, s));
+        const f = fl.some(x => x[0] < e && x[1] > s);
+        html += '<span class="w' + (f ? ' fl' : '') + '" data-w="' + esc(m[0]) + '">' + esc(m[0]) + '</span>';
+        last = e;
+      }
+      html += esc(seg.slice(last));
+    });
+  });
+  $('imPreview').innerHTML = html;
+  const removed = r.items.length + (r.text.match(new RegExp(TOKEN_RE.source, 'g')) || []).length;
+  $('imInfo').innerHTML = '<span class="chip-s">נקראו: ' + esc(importSources.join(', ')) + '</span><span class="chip-s">הוסרו: ' + removed + '</span>' + (flags ? '<span class="chip-s fl">לבדיקה: ' + flags + '</span>' : '');
+}
+function importOutgoing(){ return importRes ? DEID.toPlain(importRes) : ''; }
+
+// ---- מילוי לפי כותרות (בלי בינה מלאכותית) ----
+const HEAD_MAP = [
+  [/רקע התפתחותי|רקע רפואי|אנמנזה|היריון ולידה/, 'bgNote'],
+  [/טיפולים בעבר|אבחונים קודמים|טיפולים קודמים/, 'prevTx'],
+  [/רקע משפחתי/, 'famNote'],
+  [/דיווח ההורים|דיווח הורים|שאלון הורים|שיחה עם ההורים|שיחה עם האם/, 'parNote'],
+  [/דיווח מסגרת|דיווח הגננת|דיווח גננת|שאלון גננת|שאלון מורה|דיווח המורה/, 'schNote'],
+];
+function isHeading(line){ const t = line.trim(); return t.length > 2 && t.length <= 45 && /[:：]$/.test(t); }
+function fillByHeadings(){
+  const text = importOutgoing();
+  if (!text){ flash('קודם קראי קובץ'); return; }
+  const found = {};
+  let cur = null;
+  text.split('\n').forEach(line => {
+    if (isHeading(line)){ const h = HEAD_MAP.find(x => x[0].test(line)); cur = h ? h[1] : null; return; }
+    if (cur && line.trim()) (found[cur] = found[cur] || []).push(line.trim());
+  });
+  let n = 0;
+  Object.keys(found).forEach(id => { if (setCtl(id, found[id].join('\n'))) n++; });
+  update();
+  $('imStatus').innerHTML = n ? '<div class="okbox">מולאו ' + n + ' שדות לפי כותרות הקובץ (מסומנים במסגרת). בדקי אותם בלשוניות רקע ודיווחים.</div>' : '<div class="warnbox">לא נמצאו כותרות מוכרות בקובץ. נסי "שליפה בעזרת Claude".</div>';
+}
+
+// ---- כתיבה לשדה בטופס: לא דורסת מה שכבר מולא ----
+function setCtl(id, value){
+  if (value === undefined || value === null || value === '') return false;
+  const box = document.querySelector('[data-chips="' + id + '"]');
+  if (box){
+    const keys = Array.isArray(value) ? value : [value]; let ch = false;
+    keys.forEach(k => { const inp = box.querySelector('input[value="' + CSS.escape(String(k)) + '"]'); if (inp && !inp.checked){ inp.checked = true; ch = true; } });
+    if (ch) box.closest('.ctl').classList.add('filled');
+    return ch;
+  }
+  const el = $(id); if (!el) return false;
+  if (el.tagName === 'SELECT'){
+    if (el.value !== '' || ![...el.options].some(o => o.value === String(value))) return false;
+    el.value = String(value);
+  } else if (el.tagName === 'TEXTAREA'){
+    el.value = el.value.trim() ? el.value.trim() + '\n' + value : String(value);
+  } else {
+    if (el.value.trim()) return false;
+    el.value = String(value);
+  }
+  (el.closest('.ctl') || el).classList.add('filled');
+  return true;
+}
+
+// ---- שליפה בעזרת Claude (הטקסט נשלח רק אחרי הסרת פרטים מזהים) ----
+const EXTRACT_SECTIONS = ['s_bg', 's_rep'];
+const EXTRACT_SKIP = ['tools'];
+function extractSchema(){
+  const sc = {};
+  function walk(it){
+    if (it.type === 'row'){ it.items.forEach(walk); return; }
+    if (!it.id || EXTRACT_SKIP.includes(it.id)) return;
+    if (it.type === 'select') sc[it.id] = {type:'select', label:it.label || '', options:Object.fromEntries(it.opts.filter(o => o[0]).map(o => [o[0], o[1]]))};
+    else if (it.type === 'chips') sc[it.id] = {type:'multi', label:it.label || '', options:Object.fromEntries(it.opts.map(o => [o[0], o[1]]))};
+    else if (it.type === 'number') sc[it.id] = {type:'number', label:it.label};
+    else if (it.type === 'text' || it.type === 'textarea') sc[it.id] = {type:'text', label:it.label};
+    else if (it.type === 'sensory') SENS_MOD.forEach(m => {
+      sc['ps_' + m[0]] = {type:'select', label:'דיווח חושי - ' + m[1], options:{none:'ללא רגישות', sens:'רגישות', seek:'חיפוש תחושה'}};
+      sc['psn_' + m[0]] = {type:'text', label:'פירוט חושי - ' + m[1]};
+    });
+  }
+  SECTIONS.filter(s => EXTRACT_SECTIONS.includes(s.id)).forEach(s => s.cards.forEach(c => c.items.forEach(walk)));
+  return sc;
+}
+const EXTRACT_GUIDE = `אתה עוזר למרפאה בעיסוק במכון להתפתחות הילד בישראל. קיבלת טקסט ממסמכים על ילד שמגיע לאבחון (שאלונים, דוחות קודמים, סיכומי שיחה), ורשימת שדות של טופס.
+המשימה: לחלץ מהטקסט את המידע שמתאים לשדות, ולהחזיר JSON.
+
+כללי ברזל:
+1. רק מידע שכתוב במפורש בטקסט. אסור להסיק, לנחש או להשלים. אם אין מידע לשדה, אל תכלול אותו.
+2. בשדה מסוג select: החזר מפתח אחד מתוך options. בשדה מסוג multi: מערך של מפתחות מתוך options. בשדה number: מספר בלבד.
+3. בשדה מסוג text: משפט או כמה משפטים קצרים בעברית, בגוף שלישי ובסגנון קליני. פרטים שאין להם אפשרות מתאימה ב-options נכנסים לשדות ההערות (bgNote, prevTx, famNote, parNote, schNote).
+4. תגיות כמו [שם], [שם2], [תאריך], [יישוב], [הוסר] הן פרטים שהוסרו. העתק אותן כמו שהן, ואל תנסה לשחזר אותן.
+5. שדה ref הוא הגורם שהפנה לאבחון הנוכחי. reasons הן סיבות ההפניה.
+6. מידע על אבחונים וטיפולים קודמים (פיזיותרפיה, קלינאית תקשורת, רופא התפתחותי) נכנס ל-prevTx בתמצית, כולל המלצות שניתנו.
+
+החזר אך ורק אובייקט JSON תקין שהמפתחות שלו הם מזהי השדות, בלי טקסט נוסף.`;
+
+async function extractWithClaude(){
+  const text = importOutgoing();
+  if (!text){ flash('קודם קראי קובץ'); return; }
+  // בדיקת ביטחון: שמות שהוזנו לא אמורים להופיע במה שנשלח
+  const leak = nameList().find(x => new RegExp('(?<![\\u05D0-\\u05EA])' + escRe(x.name) + '(?![\\u05D0-\\u05EA])').test(text));
+  if (leak){ $('imStatus').innerHTML = '<div class="warnbox">השליפה בוטלה: נמצא שם בטקסט שעמד להישלח.</div>'; return; }
+  const MAX = 40000;
+  const body = text.length > MAX ? text.slice(0, MAX) : text;
+  const user = 'מגדר: ' + (val('gender') === 'f' ? 'בת' : 'בן') + '.\n\nהשדות האפשריים:\n' + JSON.stringify(extractSchema()) + '\n\nהטקסט מהמסמכים:\n' + body;
+  if (!apiKey){ openKeyPanel(extractWithClaude); return; }
+  if (!(await confirmSend('שליפה בעזרת Claude', user.split('\n')[0] + '\n\n' + body))) return;
+  const btn = $('imExtract'); btn.disabled = true; btn.textContent = 'שולף... (עד דקה)';
+  try {
+    const obj = parseJsonReply(await callClaude(EXTRACT_GUIDE, user));
+    const sc = extractSchema();
+    let n = 0;
+    Object.keys(obj).forEach(k => { if (sc[k] && setCtl(k, obj[k])) n++; });
+    update();
+    $('imStatus').innerHTML = '<div class="okbox">מולאו ' + n + ' שדות (מסומנים במסגרת).' + (text.length > MAX ? ' הטקסט היה ארוך ונשלח רק חלקו הראשון.' : '') + ' בדקי אותם בלשוניות רקע ודיווחים לפני שממשיכים.</div>';
+  } catch (err){
+    $('imStatus').innerHTML = '<div class="warnbox">השליפה נכשלה: ' + esc(err.message) + ' אפשר להשתמש ב"מילוי לפי כותרות".</div>';
+  } finally { btn.disabled = false; btn.textContent = 'שליפה אוטומטית בעזרת Claude'; }
+}
+
+// =====================================================================
+//  ייצוא לקובץ Word (docx), נבנה כולו בדפדפן
+// =====================================================================
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++){ let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b){ let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_T[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function zipStore(files){
+  const enc = new TextEncoder(), chunks = [], cd = []; let off = 0;
+  files.forEach(f => {
+    const name = enc.encode(f.name), data = typeof f.data === 'string' ? enc.encode(f.data) : f.data, crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, name.length, true);
+    chunks.push(new Uint8Array(lh.buffer), name, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+    ch.setUint32(16, crc, true); ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, name.length, true); ch.setUint32(42, off, true);
+    cd.push(new Uint8Array(ch.buffer), name);
+    off += 30 + name.length + data.length;
+  });
+  const cdSize = cd.reduce((a, c) => a + c.length, 0);
+  const e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, cdSize, true); e.setUint32(16, off, true);
+  return new Blob(chunks.concat(cd, [new Uint8Array(e.buffer)]), {type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+}
+function xe(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function wRuns(text, o){
+  // מפצלים קטעים בלועזית מהעברית כדי ששניהם יוצגו בכיוון הנכון
+  return text.split(/([A-Za-z][A-Za-z0-9\-\/(). ]*[A-Za-z0-9)])/).filter(s => s !== '').map((s, i, arr) => {
+    const latin = /^[A-Za-z]/.test(s);
+    return '<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>' + (o.bold ? '<w:b/><w:bCs/>' : '') +
+      '<w:sz w:val="' + o.sz + '"/><w:szCs w:val="' + o.sz + '"/>' + (latin ? '' : '<w:rtl/>') + '<w:lang w:bidi="he-IL"/></w:rPr><w:t xml:space="preserve">' + xe(s) + '</w:t></w:r>';
+  }).join('');
+}
+function wPara(text, o){
+  o = Object.assign({sz:24, bold:false, after:80, center:false, keep:false}, o || {});
+  return '<w:p><w:pPr>' + (o.keep ? '<w:keepNext/>' : '') + '<w:bidi/><w:spacing w:before="' + (o.before || 0) + '" w:after="' + o.after + '" w:line="300" w:lineRule="auto"/>' + (o.center ? '<w:jc w:val="center"/>' : '') + '</w:pPr>' + wRuns(text, o) + '</w:p>';
+}
+function buildDocx(){
+  const parts = [];
+  parts.push(wPara('דוח סיכום אבחון - ריפוי בעיסוק', {sz:32, bold:true, center:true, after:120}));
+  const meta = [];
+  if (val('name')) meta.push('שם: ' + val('name'));
+  if (ageNum()) meta.push('גיל: ' + ageNum());
+  const d = new Date(); meta.push('תאריך: ' + d.getDate() + '/' + (d.getMonth() + 1) + '/' + d.getFullYear());
+  parts.push(wPara(meta.join('   |   '), {sz:22, center:true, after:240}));
+  let n = 0;
+  FIELDS.forEach(f => {
+    const v = $('o_' + f[0]).value.trim(); if (!v) return; n++;
+    parts.push(wPara(f[1], {sz:26, bold:true, before:200, after:80, keep:true}));
+    v.split('\n').forEach(line => { if (line.trim()) parts.push(wPara(line.trim(), {sz:24, bold:/^מטרה \d+:$/.test(line.trim())})); });
+  });
+  const doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' + parts.join('') +
+    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="709" w:footer="709" w:gutter="0"/><w:bidi/></w:sectPr></w:body></w:document>';
+  const ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>';
+  const rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>';
+  return {blob: zipStore([{name:'[Content_Types].xml', data:ct}, {name:'_rels/.rels', data:rels}, {name:'word/document.xml', data:doc}]), count:n};
+}
+function exportWord(){
+  const r = buildDocx();
+  if (!r.count){ flash('אין עדיין תוכן לייצוא'); return; }
+  const d = new Date();
+  const fname = 'דוח_אבחון_' + (val('name') || 'מטופל') + '_' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + '.docx';
+  const a = document.createElement('a'); a.href = URL.createObjectURL(r.blob); a.download = fname;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  flash('הקובץ נשמר בתיקיית ההורדות');
+}
+
+// =====================================================================
+//  כללי
+// =====================================================================
+function flash(s){ $('msg').textContent = s; clearTimeout(flash.t); flash.t = setTimeout(() => $('msg').textContent = '', 2500); }
+function copyText(t, ok){
+  const done = () => flash(ok || 'הועתק');
+  const fb = () => { const ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch(e){ flash('ההעתקה נכשלה'); } ta.remove(); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(done, fb); else fb();
+}
+
+renderForm();
+renderOut();
+document.addEventListener('input', e => { if (!e.target.id || !e.target.id.startsWith('o_')) update(); });
+document.addEventListener('change', e => {
+  if (e.target.closest && e.target.closest('#goalChips')){
+    const k = e.target.value;
+    goalOrder = goalOrder.filter(x => x !== k); if (e.target.checked) goalOrder.push(k);
+  }
+  if (!e.target.id || !e.target.id.startsWith('o_')) update();
+});
+$('polish').addEventListener('click', polish);
+$('keyBtn').addEventListener('click', () => openKeyPanel());
+$('saveDraft').addEventListener('click', saveDraft);
+$('openDraft').addEventListener('click', openDraftPick);
+$('draftFile').addEventListener('change', onDraftFile);
+$('modal').addEventListener('click', e => { const a = e.target.getAttribute && e.target.getAttribute('data-d'); if (a) draftAction(a); });
+$('modal').addEventListener('click', e => { const a = e.target.getAttribute && e.target.getAttribute('data-k'); if (a) keyAction(a); });
+$('modal').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
+  const b = $('modal').querySelector('[data-k="unlock"],[data-k="save"],[data-d="save"],[data-d="open"]'); if (b){ e.preventDefault(); b.click(); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modalWrap').hidden){ const no = $('modal').querySelector('[data-send="no"],[data-k="close"],[data-d="close"]'); if (no) no.click(); } });
+keyStatus();
+$('exportWord').addEventListener('click', exportWord);
+$('imRead').addEventListener('click', importRead);
+$('imHeads').addEventListener('click', fillByHeadings);
+$('imExtract').addEventListener('click', extractWithClaude);
+$('imExtra').addEventListener('change', importDeid);
+$('imPreview').addEventListener('click', e => {
+  const t = e.target; if (!t.classList || !t.classList.contains('w')) return;
+  const w = t.getAttribute('data-w').replace(/['"\-]+$/, '');
+  const cur = list(val('imExtra')); if (!cur.includes(w)) cur.push(w);
+  $('imExtra').value = cur.join(', '); importDeid();
+});
+// סימון "מולא מקובץ" נעלם כשעורכים את השדה
+document.addEventListener('input', e => { const c = e.target.closest && e.target.closest('.ctl.filled'); if (c) c.classList.remove('filled'); });
+document.addEventListener('change', e => { const c = e.target.closest && e.target.closest('.ctl.filled'); if (c) c.classList.remove('filled'); });
+$('copyAll').addEventListener('click', () => copyText(FIELDS.map(f => { const v = $('o_' + f[0]).value.trim(); return v ? f[1] + ':\n' + v : ''; }).filter(Boolean).join('\n\n'), 'כל השדות הועתקו'));
+$('resetAll').addEventListener('click', () => { if (confirm('לנקות את כל הטופס?')) location.reload(); });
+window.addEventListener('beforeunload', e => { if (val('name') || val('bgNote') || chips('reasons').length){ e.preventDefault(); e.returnValue = ''; } });
+update();
+</script>
+</body>
+</html>
