@@ -94,6 +94,13 @@ input[data-auto="1"]{background:var(--accent-soft);color:var(--accent);font-weig
 #imPreview .fl{background:#fff0b3;color:#5a4600}
 .chip-s{display:inline-block;background:var(--soft);border-radius:999px;padding:2px 10px;font-size:13px;margin:0 0 6px 6px}
 .chip-s.fl{background:#fff0b3;color:#5a4600}
+.mic-wrap{position:relative;display:block}
+.mic-wrap textarea{padding-left:38px}
+.mic-wrap .mic{position:absolute;left:5px;top:5px;width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.mic-wrap .mic svg{width:15px;height:15px}
+.mic-wrap .mic:hover{color:var(--accent);border-color:var(--accent)}
+.mic-wrap .mic.on{background:#d93025;border-color:#d93025;color:#fff;animation:micp 1.2s ease-in-out infinite}
+@keyframes micp{0%,100%{box-shadow:0 0 0 0 rgba(217,48,37,.45)}50%{box-shadow:0 0 0 6px rgba(217,48,37,0)}}
 </style>
 </head>
 <body>
@@ -1462,6 +1469,63 @@ function exportWord(){
 }
 
 // =====================================================================
+//  הכתבה קולית (Web Speech API, נתמך ב-Chrome, Edge ו-Safari)
+// =====================================================================
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const MIC_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/></svg>';
+let dict = null;   // {rec, ta, btn, on}
+function addMics(root){
+  if (!SR) return;
+  (root || document).querySelectorAll('#form textarea, #out textarea').forEach(ta => {
+    if (ta.parentNode.classList.contains('mic-wrap')) return;
+    const w = document.createElement('span'); w.className = 'mic-wrap';
+    ta.parentNode.insertBefore(w, ta); w.appendChild(ta);
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'mic';
+    b.title = 'הכתבה קולית (אמרי "נקודה", "פסיק", "שורה חדשה" לסימני פיסוק)'; b.setAttribute('aria-label', 'הכתבה קולית');
+    b.innerHTML = MIC_SVG; w.appendChild(b);
+    b.addEventListener('click', () => toggleDict(ta, b));
+  });
+}
+function dictPunct(t){
+  return t.replace(/(^|\s)שורה חדשה(?=\s|$)/g, '\n')
+          .replace(/(^|\s)(נקודה|פסיק|סימן שאלה|נקודתיים)(?=\s|$)/g, (m, sp, w) => ({'נקודה':'.', 'פסיק':',', 'סימן שאלה':'?', 'נקודתיים':':'})[w])
+          .replace(/ *\n */g, '\n');
+}
+function dictInsert(ta, text){
+  text = dictPunct(text.trim()); if (!text) return;
+  const a = ta.selectionStart ?? ta.value.length, z = ta.selectionEnd ?? a;
+  const before = ta.value.slice(0, a), after = ta.value.slice(z);
+  const pre = before && !/[\s]$/.test(before) && !/^[.,?:\n]/.test(text) ? ' ' : '';
+  const post = after && !/^\s/.test(after) ? ' ' : '';
+  ta.value = before + pre + text + post + after;
+  const pos = (before + pre + text).length; ta.setSelectionRange(pos, pos);
+  ta.dispatchEvent(new Event('input', {bubbles: true}));
+  if (ta.id && ta.id.startsWith('o_')) autoSize(ta);
+}
+function stopDict(){
+  if (!dict) return;
+  dict.on = false; dict.btn.classList.remove('on');
+  try { dict.rec.stop(); } catch(e){}
+  dict = null;
+}
+function toggleDict(ta, btn){
+  const same = dict && dict.ta === ta;
+  stopDict(); if (same) return;
+  const rec = new SR(); rec.lang = 'he-IL'; rec.interimResults = false; rec.continuous = false;
+  const d = dict = {rec, ta, btn, on: true};
+  rec.onresult = e => { for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) dictInsert(ta, e.results[i][0].transcript); };
+  rec.onerror = e => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed'){ flash('אין הרשאה למיקרופון'); if (dict === d) stopDict(); }
+    else if (e.error === 'network'){ flash('ההכתבה דורשת חיבור לאינטרנט'); if (dict === d) stopDict(); }
+  };
+  // מצב חד-פעמי עם הפעלה מחדש אחרי כל משפט: עקבי יותר בטלפונים מ-continuous
+  rec.onend = () => { if (d.on && dict === d){ try { rec.start(); } catch(e){ stopDict(); } } };
+  btn.classList.add('on'); ta.focus();
+  try { rec.start(); flash('מקשיבה... לחיצה נוספת על המיקרופון עוצרת'); } catch(e){ stopDict(); }
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopDict(); });
+
+// =====================================================================
 //  כללי
 // =====================================================================
 function flash(s){ $('msg').textContent = s; clearTimeout(flash.t); flash.t = setTimeout(() => $('msg').textContent = '', 2500); }
@@ -1473,6 +1537,7 @@ function copyText(t, ok){
 
 renderForm();
 renderOut();
+addMics();
 document.addEventListener('input', e => {
   const id = e.target.id || '';
   let m = id.match(/^(beery_[a-z]+)_s$/); if (m) autoPct(m[1]);
