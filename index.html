@@ -84,6 +84,8 @@ button.btn:disabled{opacity:.55;cursor:wait}
   table.sc td{font-size:13px}
   #modal{padding:14px}
 }
+input[data-auto="1"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.calcres{margin:6px 0 8px;font-size:15px;min-height:22px}
 .ctl.filled{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
 #imPreview{white-space:pre-wrap;word-wrap:break-word;border:1px solid var(--line);border-radius:6px;padding:10px;background:var(--bg);max-height:380px;overflow:auto;font-size:14px;min-height:60px}
 #imPreview .r{background:var(--accent-soft);color:var(--accent);border-radius:4px;padding:0 3px;font-weight:600;cursor:help}
@@ -316,6 +318,9 @@ const SECTIONS = [
     {type:'textarea', id:'grade1', label:'מבדק כתיבה לכיתות א\' - ממצאים'},
     {type:'textarea', id:'wrNote', label:'הערות'},
   ]},
+  { title:'מחשבון אחוזון לכלי אחר', items:[
+    {type:'calc', id:'calc'},
+  ]},
   { title:'תפיסה וחשיבה', items:[
     {type:'chips', id:'cog', opts:[
       ['orient','התמצאות','{עונה|עונה} על שאלות היכרות תוך התמצאות בפרטי {חייו|חייה}, בזמן ובמקום כמצופה בגילו'],
@@ -467,7 +472,7 @@ function renderItem(it){
     case 'scores':
       return '<div class="ctl">' + lbl + '<table class="sc"><tr><th>מדד</th><th>אחוזון</th>' + (it.noStd ? '' : '<th>ציון תקן</th>') + '</tr>' +
         it.rows.map(r => '<tr><td>' + esc(r[1]) + '</td><td><input type="number" min="0" max="100" id="' + it.id + '_' + r[0] + '_p"></td>' + (it.noStd ? '' : '<td><input type="number" id="' + it.id + '_' + r[0] + '_s"></td>') + '</tr>').join('') +
-        '</table><p class="hint">הניסוח לפי אחוזון נוצר אוטומטית ואפשר לערוך אותו בשדה הפלט.</p></div>';
+        '</table><p class="hint">' + (it.noStd ? '' : 'הקלדת ציון תקן ממלאת את האחוזון אוטומטית (ממוצע 100, ס"ת 15). אחוזון מחושב מסומן בצבע. אם יש אחוזון מהמדריך, הקלידי אותו והוא יקבע. ') + 'הניסוח לפי אחוזון נוצר אוטומטית ואפשר לערוך אותו בשדה הפלט.</p></div>';
     case 'ayres':
       return '<div class="ctl">' + lbl + '<table class="sc">' + AYRES_ITEMS.map(r => '<tr><td>' + esc(r[1]) + '</td><td><select id="ay_' + r[0] + '">' + AYRES_LEVELS.map(l => '<option value="' + l[0] + '">' + l[1] + '</option>').join('') + '</select></td></tr>').join('') + '</table></div>';
     case 'sp2':
@@ -475,6 +480,13 @@ function renderItem(it){
         '<tr><th colspan="2">תחומי חישה</th></tr>' + SP2_SECTIONS.map(r => spRow('ss_' + r[0], r[1])).join('') + '</table></div>';
     case 'sensory':
       return '<div class="ctl">' + lbl + '<table class="sc">' + SENS_MOD.map(r => '<tr><td style="width:70px">' + r[1] + '</td><td><select id="ps_' + r[0] + '"><option value=""></option><option value="none">ללא רגישות</option><option value="sens">רגישות</option><option value="seek">חיפוש תחושה</option></select></td><td><input type="text" id="psn_' + r[0] + '" placeholder="פירוט"></td></tr>').join('') + '</table></div>';
+    case 'calc':
+      return '<div class="ctl"><div class="row">' +
+        '<div class="ctl"><span class="lbl">סוג הציון</span><select id="calcScale">' + SCALES.map(x => '<option value="' + x[0] + '">' + esc(x[1]) + '</option>').join('') + '</select></div>' +
+        '<div class="ctl"><span class="lbl">שם המבחן / תת-המבחן</span><input type="text" id="calcName" placeholder="למשל: קואורדינציה דו-צדדית"></div>' +
+        '<div class="ctl"><span class="lbl">ציון</span><input type="number" step="any" id="calcScore"></div></div>' +
+        '<div class="calcres" id="calcRes"></div><button class="btn" id="calcCopy" type="button">העתקת המשפט</button>' +
+        '<p class="hint">חישוב לפי התפלגות נורמלית. אם במדריך המבחן מופיע אחוזון אחר, הוא הקובע.</p></div>';
     case 'goals':
       return '<div class="ctl"><span class="lbl">בנק מטרות (סדר הבחירה = סדר המטרות)</span><div class="chips" id="goalChips">' + GOALS.map(g => '<label><input type="checkbox" value="' + g[0] + '">' + esc(g[1]) + '</label>').join('') + '</div></div>';
   }
@@ -508,6 +520,34 @@ function cap(arr){ return arr.filter(Boolean).join('\n'); }
 function ageNum(){ const y = val('ageY'), m = val('ageM'); if (!y) return ''; return y + (m && m !== '0' ? '.' + m : ''); }
 function isToddler(){ const y = parseInt(val('ageY'),10); return !isNaN(y) && y < 3; }
 
+// ---- אחוזון מציון תקן (התפלגות נורמלית) ----
+const SCALES = [['ss','ציון תקן (ממוצע 100, ס"ת 15)',100,15],['t','ציון T / ציון תקן של BOT-2 (50, 10)',50,10],['bot','ציון סולמי של תת-מבחן BOT-2 (15, 5)',15,5],['scaled','ציון סולמי (10, 3)',10,3],['z','ציון Z (0, 1)',0,1]];
+function normCdf(z){
+  const t = 1 / (1 + 0.3275911 * Math.abs(z) / Math.SQRT2);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z / 2);
+  return z >= 0 ? (1 + y) / 2 : (1 - y) / 2;
+}
+function pctFromScore(score, mean, sd){
+  const p = normCdf((score - mean) / sd) * 100;
+  if (p < 1) return Math.max(0.1, Math.round(p * 10) / 10);
+  if (p > 99) return Math.min(99.9, Math.round(p * 10) / 10);
+  return Math.round(p);
+}
+function pctText(p){ p = Number(p); return p < 1 ? 'מתחת לאחוזון 1' : p > 99 ? 'מעל אחוזון 99' : 'באחוזון ' + p; }
+function autoPct(prefix){
+  const s = $(prefix + '_s'), pe = $(prefix + '_p'); if (!s || !pe) return;
+  const manual = pe.value !== '' && pe.dataset.auto !== '1';
+  if (manual) return;
+  if (s.value === ''){ if (pe.dataset.auto === '1'){ pe.value = ''; delete pe.dataset.auto; } return; }
+  pe.value = pctFromScore(Number(s.value), 100, 15); pe.dataset.auto = '1';
+}
+function calcUpdate(){
+  const sc = SCALES.find(x => x[0] === val('calcScale')), v = val('calcScore');
+  if (!sc || v === ''){ $('calcRes').textContent = ''; return; }
+  const p = pctFromScore(Number(v), sc[2], sc[3]);
+  const name = val('calcName');
+  $('calcRes').textContent = G((name ? 'ב' + name.replace(/^ב/, '') + ' ' : '') + '{קיבל|קיבלה} ציון ' + v + ', ' + pctText(p) + ', ' + pctPhrase(p) + '.');
+}
 function pctPhrase(p){
   p = Number(p);
   if (p <= 15) return 'מתחת לטווח הנורמה לגילו';
@@ -649,7 +689,7 @@ B.f_fm = () => {
     const p = val('beery_' + r[0] + '_p'), sd = val('beery_' + r[0] + '_s');
     if (p === '') return;
     const pre = i === 0 ? 'באבחון BEERY, בחלק הבודק ' : 'בחלק הבודק ';
-    out.push(G(pre + r[1] + ' {קיבל|קיבלה} ציון באחוזון ' + p + (sd ? ' (ציון תקן ' + sd + ')' : '') + ', ' + pctPhrase(p) + '.'));
+    out.push(G(pre + r[1] + ' {קיבל|קיבלה} ציון ' + pctText(p) + (sd ? ' (ציון תקן ' + sd + ')' : '') + ', ' + pctPhrase(p) + '.'));
   });
   if (val('fmNote')) out.push(val('fmNote'));
   return out.filter(Boolean).join('\n');
@@ -1433,6 +1473,14 @@ function copyText(t, ok){
 
 renderForm();
 renderOut();
+document.addEventListener('input', e => {
+  const id = e.target.id || '';
+  let m = id.match(/^(beery_[a-z]+)_s$/); if (m) autoPct(m[1]);
+  m = id.match(/^(beery_[a-z]+)_p$/); if (m) delete e.target.dataset.auto;
+  if (/^calc/.test(id)) calcUpdate();
+});
+document.addEventListener('change', e => { if (/^calc/.test(e.target.id || '')) calcUpdate(); });
+$('calcCopy').addEventListener('click', () => { const t = $('calcRes').textContent; if (t) copyText(t, 'המשפט הועתק'); });
 document.addEventListener('input', e => { if (!e.target.id || !e.target.id.startsWith('o_')) update(); });
 document.addEventListener('change', e => {
   if (e.target.closest && e.target.closest('#goalChips')){
