@@ -977,18 +977,44 @@ async function encryptJson(obj, pass){
   const ct = new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM', iv}, k, new TextEncoder().encode(JSON.stringify(obj))));
   return JSON.stringify({type:'ot-report-draft', v:1, salt:b64(salt), iv:b64(iv), ct:b64(ct)});
 }
+// שגיאה עם הודעה שאפשר להציג כמו שהיא
+function DraftError(m){ const e = new Error(m); e.show = true; return e; }
+// מקלדת עברית תקנית: מקש באנגלית -> האות שהוא מקליד בפריסה העברית
+const HEB_KEYS = {q:'/', w:"'", e:'ק', r:'ר', t:'א', y:'ט', u:'ו', i:'ן', o:'ם', p:'פ', a:'ש', s:'ד', d:'ג', f:'כ', g:'ע', h:'י', j:'ח', k:'ל', l:'ך', ';':'ף', "'":',', z:'ז', x:'ס', c:'ב', v:'ה', b:'נ', n:'מ', m:'צ', ',':'ת', '.':'ץ', '/':'.'};
+const ENG_KEYS = Object.fromEntries(Object.entries(HEB_KEYS).map(([k, v]) => [v, k]));
+// טעויות הקלדה נפוצות בסיסמה: רווח בקצה, שפת מקלדת, Caps Lock, אות ראשונה גדולה בטלפון
+function passVariants(p){
+  const swap = t => [...t].map(c => c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase()).join('');
+  const toHeb = t => [...t].map(c => HEB_KEYS[c] || c).join('');
+  const toEng = t => [...t].map(c => ENG_KEYS[c] || c).join('');
+  const first = t => t ? swap(t[0]) + t.slice(1) : t;
+  const out = [];
+  [p, p.trim()].forEach(b => [b, toHeb(b), toEng(b), toHeb(b.toLowerCase()), swap(b), first(b)].forEach(v => { if (v && !out.includes(v)) out.push(v); }));
+  return out;
+}
 async function decryptJson(text, pass){
-  const f = JSON.parse(text);
-  if (f.type !== 'ot-report-draft') throw new Error('הקובץ אינו טיוטה של הטופס');
-  const k = await deriveAes(pass, unb64(f.salt));
-  const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv:unb64(f.iv)}, k, unb64(f.ct));
-  return JSON.parse(new TextDecoder().decode(pt));
+  let f;
+  try { f = JSON.parse(text); } catch(e){ throw DraftError('הקובץ אינו טיוטה של הטופס, או שהוא נשמר רק בחלקו (למשל הורדה שלא הסתיימה). כדאי לנסות עותק אחר של הקובץ.'); }
+  if (!f || f.type !== 'ot-report-draft') throw DraftError('הקובץ אינו טיוטה של הטופס.');
+  let salt, iv, ct;
+  try { salt = unb64(f.salt); iv = unb64(f.iv); ct = unb64(f.ct); } catch(e){ throw DraftError('קובץ הטיוטה פגום (התוכן המוצפן שבור). כדאי לנסות עותק אחר של הקובץ.'); }
+  if (salt.length !== 16 || iv.length !== 12 || ct.length < 17) throw DraftError('קובץ הטיוטה פגום (חסר בו מידע). כדאי לנסות עותק אחר של הקובץ.');
+  const tries = passVariants(pass);
+  for (const v of tries){
+    const k = await deriveAes(v, salt);
+    let pt; try { pt = await crypto.subtle.decrypt({name:'AES-GCM', iv}, k, ct); } catch(e){ continue; }
+    const st = JSON.parse(new TextDecoder().decode(pt));
+    if (v !== pass) st._passNote = 'הסיסמה התאימה אחרי תיקון של טעות הקלדה';
+    return st;
+  }
+  throw DraftError('הסיסמה לא מתאימה לקובץ. הקובץ עצמו תקין. בדקו את שפת המקלדת, Caps Lock, ומספרים מול אותיות דומות (0 ו-O, 1 ו-l).');
 }
 function saveDraft(){
   if (!hasContent()){ flash('אין עדיין מה לשמור'); return; }
   openModal('<h3>שמירת טיוטה</h3><p>הטיוטה נשמרת כקובץ מוצפן בסיסמה. אפשר להעביר אותו לטלפון או למחשב אחר, ולפתוח שם עם אותה סיסמה. בלי הסיסמה אי אפשר לקרוא אותו, ושם הקובץ לא כולל את שם המטופל.</p>' +
     '<label class="lbl">סיסמה לטיוטה (לפחות 6 תווים)</label><input type="password" id="dPass" autocomplete="off">' +
     '<label class="lbl">הקלדת הסיסמה שוב</label><input type="password" id="dPass2" autocomplete="off">' +
+    '<label style="display:inline-flex;gap:5px;align-items:center;font-size:13px;margin-top:6px"><input type="checkbox" id="dShow"> הצגת הסיסמה</label>' +
     '<div class="mrow"><button class="btn primary" data-d="save">שמירה</button><button class="btn" data-d="close">ביטול</button></div><div id="dMsg"></div>');
 }
 let draftFileText = null;
@@ -998,6 +1024,7 @@ async function onDraftFile(){
   draftFileText = await f.text();
   openModal('<h3>פתיחת טיוטה</h3><p>' + esc(f.name) + '</p>' + (hasContent() ? '<div class="warnbox">הטיוטה תחליף את מה שממולא כרגע בטופס.</div>' : '') +
     '<label class="lbl">סיסמת הטיוטה</label><input type="password" id="dPass" autocomplete="off">' +
+    '<label style="display:inline-flex;gap:5px;align-items:center;font-size:13px;margin-top:6px"><input type="checkbox" id="dShow"> הצגת הסיסמה</label>' +
     '<div class="mrow"><button class="btn primary" data-d="open">פתיחה</button><button class="btn" data-d="close">ביטול</button></div><div id="dMsg"></div>');
 }
 async function draftAction(act){
@@ -1016,9 +1043,14 @@ async function draftAction(act){
   }
   if (act === 'open'){
     let st;
+    const btn = $('modal').querySelector('[data-d="open"]'); btn.disabled = true;
+    $('dMsg').innerHTML = '<p class="msg">בודק...</p>';
     try { st = await decryptJson(draftFileText, $('dPass').value); }
-    catch (e){ return msg(e.message.includes('אינו') ? e.message : 'הסיסמה שגויה או שהקובץ פגום.'); }
-    restoreState(st); closeModal(); draftFileText = null; flash('הטיוטה נפתחה');
+    catch (e){ btn.disabled = false; return msg(e.show ? e.message : 'לא הצלחתי לפתוח את הקובץ: ' + e.message); }
+    const note = st._passNote; delete st._passNote;
+    try { restoreState(st); }
+    catch (e){ btn.disabled = false; return msg('הסיסמה נכונה, אבל טעינת הטיוטה לטופס נכשלה: ' + e.message); }
+    closeModal(); draftFileText = null; flash(note ? 'הטיוטה נפתחה (' + note + ')' : 'הטיוטה נפתחה');
   }
 }
 
@@ -1523,6 +1555,7 @@ function toggleDict(ta, btn){
   btn.classList.add('on'); ta.focus();
   try { rec.start(); flash('מקשיבה... לחיצה נוספת על המיקרופון עוצרת'); } catch(e){ stopDict(); }
 }
+document.addEventListener('change', e => { if (e.target.id === 'dShow') document.querySelectorAll('#dPass,#dPass2').forEach(i => i.type = e.target.checked ? 'text' : 'password'); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopDict(); });
 
 // =====================================================================
