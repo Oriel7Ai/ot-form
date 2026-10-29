@@ -25,7 +25,8 @@ async function fresh(browser, opts){
   return page;
 }
 const out = (page, k) => page.$eval('#o_' + k, el => el.value);
-const tab = (page, id) => page.click('[data-tab="' + id + '"]');
+// מעבר לשלב בטופס לפי מזהה הדף (s_find = הדף הראשון של הממצאים)
+const tab = (page, id) => page.evaluate(id => goStep(STEPS.findIndex(s => s.id === (id === 's_find' ? 's_find1' : id))), id);
 const chip = (page, group, key) => page.click('[data-chips="' + group + '"] label:has(input[value="' + key + '"])');
 
 test('אין שגיאות JavaScript בטעינה', async b => {
@@ -95,25 +96,49 @@ test('צ\'יפים נגישים במקלדת (Tab + רווח)', async b => {
   assert.strictEqual(await page.$eval('[data-chips="reasons"] input[value="fm"]', el => el.checked), true);
 });
 
-test('לשוניות עם תפקידי נגישות וחיצים', async b => {
+test('שלבים: כפתור המשך, סימון השלב הנוכחי ושחזור השלב אחרי רענון', async b => {
   const page = await fresh(b);
-  assert.strictEqual(await page.getAttribute('#tabs', 'role'), 'tablist');
-  await page.focus('#tab_s_import');
-  await page.keyboard.press('ArrowLeft');
-  assert.strictEqual(await page.getAttribute('#tab_s_bg', 'aria-selected'), 'true');
-  assert.strictEqual(await page.$eval('#s_bg', el => el.classList.contains('on')), true);
+  await page.fill('#name', 'נועם');
+  await page.click('#st_start [data-go="1"]');
+  assert.strictEqual(await page.getAttribute('#stepper [data-step="1"]', 'aria-current'), 'step');
+  assert.strictEqual(await page.$eval('#s_import', el => el.classList.contains('on')), true);
+  await page.waitForTimeout(800);
+  await page.reload();
+  assert.strictEqual(await page.$eval('#s_import', el => el.classList.contains('on')), true);
+});
+
+test('פרופיל פתיחה, "הכול תואם גיל" ובחירות סותרות', async b => {
+  const page = await fresh(b);
+  await page.click('[data-preset="preschool"]');
+  assert.strictEqual(await page.$eval('[data-chips="reasons"] input[value="fm"]', el => el.checked), true);
+  assert.deepStrictEqual(await page.evaluate(() => goalOrder), ['attn','base','graph','vis']);
+  await tab(page, 's_find');
+  await page.click('[data-norm="מוטוריקה עדינה וגרפומוטוריקה"]');
+  assert.strictEqual(await page.$eval('[data-chips="fm"] input[value="cutOk"]', el => el.checked), true);
+  await chip(page, 'fm', 'cutNo');
+  assert.strictEqual(await page.$eval('[data-chips="fm"] input[value="cutOk"]', el => el.checked), false);
+});
+
+test('מטרות מוצעות ובדיקה לפני ייצוא', async b => {
+  const page = await fresh(b);
+  await tab(page, 's_find');
+  await chip(page, 'beh', 'attShort');
+  assert.ok((await page.evaluate(() => suggestGoals().map(x => x.k))).includes('attn'));
+  await tab(page, 'st_review');
+  assert.match(await page.textContent('#checks'), /יש קשיים בלי מטרה מתאימה: השתתפות וקשב/);
 });
 
 test('שמירה אוטומטית משחזרת אחרי רענון', async b => {
   const page = await fresh(b);
   await page.fill('#name', 'נועם');
   await tab(page, 's_bg'); await chip(page, 'reasons', 'write');
-  await page.fill('#o_family', 'טקסט שנערך ביד');
+  await tab(page, 'st_review');
+  await page.fill('#o_background', 'טקסט שנערך ביד');
   await page.waitForTimeout(800);
   await page.reload();
   assert.strictEqual(await page.$eval('#name', el => el.value), 'נועם');
   assert.strictEqual(await page.$eval('[data-chips="reasons"] input[value="write"]', el => el.checked), true);
-  assert.strictEqual(await out(page, 'family'), 'טקסט שנערך ביד');
+  assert.strictEqual(await out(page, 'background'), 'טקסט שנערך ביד');
 });
 
 test('ניקוי הטופס וביטול הניקוי', async b => {
@@ -121,7 +146,7 @@ test('ניקוי הטופס וביטול הניקוי', async b => {
   await page.fill('#name', 'נועם');
   await page.click('#more summary'); await page.click('#resetAll');
   assert.strictEqual(await page.$eval('#name', el => el.value), '');
-  await page.click('#undoReset');
+  await page.click('#msg .linkbtn');
   assert.strictEqual(await page.$eval('#name', el => el.value), 'נועם');
 });
 
@@ -134,6 +159,7 @@ test('אזהרה לפני סגירה כשיש תוכן בכל שדה (לא רק 
 
 test('מילוי לפי כותרות לא משכפל טקסט בלחיצה כפולה', async b => {
   const page = await fresh(b);
+  await tab(page, 's_import');
   await page.fill('#imPaste', 'רקע משפחתי:\nהמשפחה גרה בבית פרטי');
   await page.click('#imRead');
   await page.click('#imHeads'); await page.click('#imHeads');
@@ -145,6 +171,7 @@ test('שם קובץ ה-Word לא כולל את שם המטופל', async b => {
   await page.fill('#name', 'נועם');
   // בודקים את שם הקובץ שהדף מבקש (Chromium בלי ממשק מחליף שמות בעברית ב-"download")
   await page.evaluate(() => { HTMLAnchorElement.prototype.click = function(){ window.__dl = this.download; }; });
+  await tab(page, 'st_review');
   await page.click('#exportWord');
   const name = await page.evaluate(() => window.__dl);
   assert.ok(!name.includes('נועם'), name);
@@ -168,6 +195,28 @@ test('ניסוח משלי: הוספה, שימוש בדוח ומחיקה', async 
   assert.strictEqual(await page.$('[data-chips="parGen"] label.mine'), null);
 });
 
+test('טיוטה מוצפנת: שמירה ופתיחה, כולל תיקון טעות הקלדה בסיסמה', async b => {
+  const page = await fresh(b);
+  await page.fill('#name', 'נועם');
+  const r = await page.evaluate(async () => {
+    const enc = await encryptJson(collectState(), 'Secret1');
+    const st = await decryptJson(enc, 'sECRET1');   // Caps Lock
+    return [st.ctl.name, !!st._passNote];
+  });
+  assert.deepStrictEqual(r, ['נועם', true]);
+});
+
+test('תכונות קיימות נשמרו: ענן, הכתבה קולית ומחשבון אחוזון', async b => {
+  const page = await fresh(b);
+  for (const id of ['cloudSave', 'cloudOpen', 'saveDraft', 'openDraft', 'keyBtn', 'myPhrases', 'resetAll']) assert.ok(await page.$('#' + id), id);
+  assert.strictEqual(await page.evaluate(() => GOOGLE_CLIENT_ID.length > 10), true);
+  const hasSR = await page.evaluate(() => !!(window.SpeechRecognition || window.webkitSpeechRecognition));
+  if (hasSR) assert.ok(await page.$$eval('#pages textarea', tas => tas.every(t => t.parentNode.classList.contains('mic-wrap'))));
+  await page.evaluate(() => goStep(STEPS.findIndex(s => s.id === 's_find2')));
+  await page.fill('#calcScore', '115');
+  assert.match(await page.textContent('#calcRes'), /באחוזון 84/);
+});
+
 test('פענוח תשובת Claude בהזרמה, כולל מעבר למודל חלופי', async b => {
   const page = await fresh(b);
   const r = await page.evaluate(() => parseSSE([
@@ -188,6 +237,7 @@ test('ניסוח בעזרת Claude: התקדמות, תשובה קטועה, וב�
   await page.route('https://api.anthropic.com/v1/messages', r => { bodySent = JSON.parse(r.request().postData()); r.fulfill({status: 200, contentType: 'text/event-stream', body: sse(reply)}); });
   await tab(page, 's_find'); await page.selectOption('#coop', 'full');
   const auto = await out(page, 'f_beh');
+  await tab(page, 'st_review');
   await page.click('#polish'); await page.click('[data-send="yes"]');
   await page.waitForSelector('#undoPolish');
   assert.strictEqual(bodySent.model, 'claude-sonnet-5-5');
