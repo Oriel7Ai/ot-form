@@ -36,8 +36,24 @@ select,input[type=text],input[type=number],textarea{font:inherit;color:var(--ink
 textarea{min-height:60px;resize:vertical}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chips label{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line);background:var(--soft);border-radius:999px;padding:4px 11px;cursor:pointer;font-size:14px;user-select:none}
-.chips input{display:none}
+.chips label{position:relative}
+.chips input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
 .chips label:has(input:checked){background:var(--accent-soft);border-color:var(--accent);font-weight:600}
+.chips label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+.chips .addph{border:1px dashed var(--line);background:none;color:var(--muted);border-radius:999px;padding:4px 11px;cursor:pointer;font:inherit;font-size:14px}
+.chips .addph:hover{color:var(--accent);border-color:var(--accent)}
+.chips label.mine{border-style:dashed}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.more{position:relative}
+.more > summary{list-style:none;cursor:pointer}
+.more > summary::-webkit-details-marker{display:none}
+.more-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:20;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:6px;display:flex;flex-direction:column;gap:4px;min-width:190px}
+.more-menu .btn{text-align:right;width:100%}
+.linkbtn{font:inherit;background:none;border:0;color:inherit;text-decoration:underline;cursor:pointer;padding:0 4px;font-weight:600}
+#jump{display:none}
+@media (max-width:980px){
+  #jump{display:block;position:fixed;bottom:16px;left:16px;z-index:30;border-radius:999px;padding:10px 16px;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+}
 .hint{font-size:13px;color:var(--muted);margin:4px 0 0}
 table.sc{border-collapse:collapse;width:100%}
 table.sc td,table.sc th{border-bottom:1px solid var(--line);padding:5px 4px;text-align:right;font-size:14px;vertical-align:middle}
@@ -45,7 +61,7 @@ table.sc th{color:var(--muted);font-weight:600}
 table.sc input,table.sc select{padding:4px 6px}
 .out-col{position:sticky;top:76px;max-height:calc(100vh - 92px);overflow:auto}
 .outbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
-button.btn{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 13px;border-radius:6px;cursor:pointer}
+button.btn,summary.btn{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:7px 13px;border-radius:6px;cursor:pointer}
 button.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
 button.btn:disabled{opacity:.55;cursor:wait}
 .of{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
@@ -80,7 +96,9 @@ button.btn:disabled{opacity:.55;cursor:wait}
   .wrap{padding:10px;gap:10px}
   .card{padding:12px}
   .tabs{position:sticky;top:0;z-index:4;background:var(--bg);padding:6px 0;margin-bottom:8px}
-  .outbar .btn{flex:1 1 45%}
+  .outbar > .btn,.outbar > .more{flex:1 1 45%}
+  .outbar .more > summary{display:block;text-align:center}
+  .more-menu{left:auto;right:0;width:100%}
   table.sc td{font-size:13px}
   #modal{padding:14px}
 }
@@ -128,23 +146,31 @@ input[data-auto="1"]{background:var(--accent-soft);color:var(--accent);font-weig
   <div class="out-col">
     <div class="outbar">
       <button class="btn primary" id="polish">ניסוח בעזרת Claude</button>
-      <button class="btn" id="keyBtn">הגדרת מפתח API</button>
       <button class="btn" id="copyAll">העתקת הכול</button>
       <button class="btn" id="exportWord">ייצוא ל-Word</button>
-      <button class="btn" id="saveDraft">שמירת טיוטה</button>
-      <button class="btn" id="openDraft">פתיחת טיוטה</button>
+      <details class="more" id="more">
+        <summary class="btn" aria-haspopup="menu">עוד ▾</summary>
+        <div class="more-menu" role="menu">
+          <button class="btn" id="saveDraft" role="menuitem">שמירת טיוטה לקובץ</button>
+          <button class="btn" id="openDraft" role="menuitem">פתיחת טיוטה מקובץ</button>
+          <button class="btn" id="cloudSave" role="menuitem">שמירה בענן</button>
+          <button class="btn" id="cloudOpen" role="menuitem">פתיחה מהענן</button>
+          <button class="btn" id="keyBtn" role="menuitem">הגדרת מפתח API</button>
+          <button class="btn" id="myPhrases" role="menuitem">הניסוחים שלי</button>
+          <button class="btn" id="resetAll" role="menuitem">ניקוי הטופס</button>
+        </div>
+      </details>
       <input type="file" id="draftFile" accept=".otdraft,.json" hidden>
-      <button class="btn" id="cloudSave">שמירה בענן</button>
-      <button class="btn" id="cloudOpen">פתיחה מהענן</button>
-      <button class="btn" id="resetAll">ניקוי הטופס</button>
-      <span class="msg" id="msg"></span>
+      <span class="msg" id="msg" role="status" aria-live="polite"></span>
     </div>
-    <div id="status"></div>
+    <div id="nameWarn"></div>
+    <div id="status" aria-live="polite"></div>
     <div id="out"></div>
   </div>
 </div>
+<button class="btn primary" id="jump" type="button">לדוח ↓</button>
 
-<div id="modalWrap" hidden><div id="modal" role="dialog" aria-modal="true"></div></div>
+<div id="modalWrap" hidden><div id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"></div></div>
 
 <script>
 // =====================================================================
@@ -480,7 +506,8 @@ function renderItem(it){
     case 'select':
       return '<div class="ctl">' + lbl + '<select id="' + it.id + '">' + it.opts.map(o => '<option value="' + esc(o[0]) + '">' + esc(o[1]) + '</option>').join('') + '</select>' + hint + '</div>';
     case 'chips':
-      return '<div class="ctl">' + lbl + '<div class="chips" data-chips="' + it.id + '">' + it.opts.map(o => '<label><input type="checkbox" value="' + esc(o[0]) + '">' + esc(o[1]) + '</label>').join('') + '</div>' + hint + '</div>';
+      return '<div class="ctl">' + lbl + '<div class="chips" data-chips="' + it.id + '">' + it.opts.map(chipHtml).join('') +
+        (NO_CUSTOM.includes(it.id) ? '' : '<button type="button" class="addph" data-addph="' + it.id + '" title="הוספת ניסוח משלי לקבוצה הזו">+ ניסוח משלי</button>') + '</div>' + hint + '</div>';
     case 'text': return '<div class="ctl">' + lbl + '<input type="text" id="' + it.id + '">' + hint + '</div>';
     case 'number': return '<div class="ctl">' + lbl + '<input type="number" id="' + it.id + '">' + hint + '</div>';
     case 'textarea': return '<div class="ctl">' + lbl + '<textarea id="' + it.id + '"></textarea>' + hint + '</div>';
@@ -508,15 +535,48 @@ function renderItem(it){
   return '';
 }
 function spRow(id, label){ return '<tr><td>' + esc(label) + '</td><td><select id="' + id + '">' + SP2_LEVELS.map(l => '<option value="' + l[0] + '">' + l[1] + '</option>').join('') + '</select></td></tr>'; }
+function chipHtml(o){ return '<label' + (o[3] ? ' class="mine"' : '') + '><input type="checkbox" value="' + esc(o[0]) + '">' + esc(o[1]) + '</label>'; }
 
+// ---------- הניסוחים שלי: צ'יפים שהמשתמשת מוסיפה, נשמרים בדפדפן הזה ----------
+// קבוצות שבהן הטקסט נבנה מהתווית או מהבחירה עצמה, ולכן ניסוח חופשי לא מתאים להן
+const NO_CUSTOM = ['joint', 'shapes', 'blocks'];
+const PHRASE_STORE = 'ot_form_phrases_v1';
+function loadPhrases(){ try { return JSON.parse(localStorage.getItem(PHRASE_STORE)) || {}; } catch(e){ return {}; } }
+function savePhrases(p){ try { localStorage.setItem(PHRASE_STORE, JSON.stringify(p)); return true; } catch(e){ return false; } }
+function applyPhrases(){
+  const mine = loadPhrases();
+  const walk = it => {
+    if (it.type === 'row') return it.items.forEach(walk);
+    if (it.type === 'chips' && mine[it.id]) mine[it.id].forEach(o => { if (!it.opts.some(x => x[0] === o[0])) it.opts.push([o[0], o[1], o[2], true]); });
+  };
+  SECTIONS.forEach(s => s.cards.forEach(c => c.items.forEach(walk)));
+}
+function chipItem(id){
+  let f = null;
+  const walk = it => { if (it.type === 'row') it.items.forEach(walk); else if (it.id === id) f = it; };
+  SECTIONS.forEach(s => s.cards.forEach(c => c.items.forEach(walk)));
+  return f;
+}
+
+function selectTab(id){
+  document.querySelectorAll('#tabs button').forEach(x => { const on = x.dataset.tab === id; x.classList.toggle('on', on); x.setAttribute('aria-selected', on); x.tabIndex = on ? 0 : -1; });
+  document.querySelectorAll('.sec').forEach(x => x.classList.toggle('on', x.id === id));
+}
 function renderForm(){
-  $('tabs').innerHTML = TABS.map((s,i) => '<button data-tab="' + s.id + '"' + (i===0?' class="on"':'') + '>' + esc(s.title) + '</button>').join('');
-  $('form').innerHTML = TABS.map((s,i) => '<div class="sec' + (i===0?' on':'') + '" id="' + s.id + '">' +
+  applyPhrases();
+  $('tabs').setAttribute('role', 'tablist');
+  $('tabs').innerHTML = TABS.map((s,i) => '<button role="tab" id="tab_' + s.id + '" aria-controls="' + s.id + '" aria-selected="' + (i===0) + '" tabindex="' + (i===0 ? 0 : -1) + '" data-tab="' + s.id + '"' + (i===0?' class="on"':'') + '>' + esc(s.title) + '</button>').join('');
+  $('form').innerHTML = TABS.map((s,i) => '<div class="sec' + (i===0?' on':'') + '" id="' + s.id + '" role="tabpanel" aria-labelledby="tab_' + s.id + '">' +
     (s.html || s.cards.map(c => '<div class="card"><h3>' + esc(c.title) + '</h3>' + c.items.map(renderItem).join('') + '</div>').join('')) + '</div>').join('');
   $('tabs').addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b) return;
-    document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
-    document.querySelectorAll('.sec').forEach(x => x.classList.toggle('on', x.id === b.dataset.tab));
+    const b = e.target.closest('button'); if (b) selectTab(b.dataset.tab);
+  });
+  // חיצים בין הלשוניות (בכיוון ימין-לשמאל)
+  $('tabs').addEventListener('keydown', e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const bs = [...document.querySelectorAll('#tabs button')], i = bs.indexOf(document.activeElement); if (i < 0) return;
+    const n = bs[(i + (e.key === 'ArrowLeft' ? 1 : -1) + bs.length) % bs.length];
+    e.preventDefault(); selectTab(n.dataset.tab); n.focus();
   });
 }
 
@@ -749,11 +809,13 @@ B.f_sens = () => {
   if (val('sensNote')) out.push(val('sensNote'));
   return out.join('\n');
 };
-function firstSentence(t){ if (!t) return ''; const line = t.split('\n')[0]; const m = line.match(/[^.]+\./g); return (m ? m.slice(0, 2).join('') : line).trim(); }
+// מפצל למשפטים רק בנקודה שאחריה רווח או סוף שורה, כדי לא לחתוך מספרים כמו 3.5 או 4.1
+function splitSentences(line){ return (line.match(/(?:[^.]|\.(?!\s|$))+(?:\.|$)/g) || []).map(x => x.trim()).filter(Boolean); }
+function firstSentence(t){ if (!t) return ''; const line = t.split('\n')[0]; const m = splitSentences(line); return (m.length ? m.slice(0, 2).join(' ') : line).trim(); }
 B.summary = () => {
   const out = [openingSentence()];
   // משפט ההתנהגות בסיכום: מדלגים על "הגיע בליווי..."
-  const behS = (B.f_beh().split('\n')[0].match(/[^.]+\./g) || []).map(x => x.trim()).filter(x => !/לאבחון בליווי/.test(x));
+  const behS = splitSentences(B.f_beh().split('\n')[0]).filter(x => !/לאבחון בליווי/.test(x));
   if (behS.length) out.push(behS.slice(0, 2).join(' '));
   const dom = [['בתחום המוטוריקה הגסה- ', B.f_gm()], ['בתחום המוטוריקה העדינה- ', B.f_fm()], ['בתחום הכתיבה- ', B.f_wr()], ['בתחום התפיסה והחשיבה- ', B.f_cog()], ['בתחום המשחק- ', B.f_play()], ['בתחום הוויסות החושי- ', B.f_sens()]];
   dom.forEach(d => { const f = firstSentence(d[1]); if (f) out.push(d[0] + f.replace(/^\[שם\]\s*/,'')); });
@@ -801,7 +863,7 @@ function renderOut(){
   $('out').innerHTML = FIELDS.map(f => '<div class="of" id="of_' + f[0] + '"><div class="t"><b>' + esc(f[1]) + '</b><span class="badge" id="bd_' + f[0] + '"></span>' +
     '<button data-reset="' + f[0] + '" hidden>חזרה לאוטומטי</button><button data-copy="' + f[0] + '">העתקה</button></div><textarea id="o_' + f[0] + '"></textarea></div>').join('');
   $('out').addEventListener('input', e => {
-    if (e.target.id && e.target.id.startsWith('o_')){ const k = e.target.id.slice(2); dirty[k] = true; aiDone[k] = false; markField(k); }
+    if (e.target.id && e.target.id.startsWith('o_')){ const k = e.target.id.slice(2); dirty[k] = true; aiDone[k] = false; markField(k); if (polishUndo) delete polishUndo[k]; saveSessionSoon(); }
   });
   $('out').addEventListener('click', e => {
     const c = e.target.getAttribute('data-copy'), r = e.target.getAttribute('data-reset');
@@ -824,7 +886,8 @@ function update(){
     markField(k); autoSize(ta);
   });
   const missing = !val('name');
-  $('status').innerHTML = missing ? '<div class="warnbox">לא הוזן שם פרטי. בטקסט יופיע [שם], ואפשר להשלים אותו גם בסוף.</div>' : '';
+  $('nameWarn').innerHTML = missing ? '<div class="warnbox">לא הוזן שם פרטי. בטקסט יופיע [שם], ואפשר להשלים אותו גם בסוף.</div>' : '';
+  saveSessionSoon();
 }
 
 // =====================================================================
@@ -836,7 +899,10 @@ function update(){
 const API_URL = 'https://api.anthropic.com/v1/messages';
 const KEY_STORE = 'ot_form_api_key_v1';
 const MODEL_STORE = 'ot_form_model_v1';
-const DEFAULT_MODEL = 'claude-sonnet-5';
+const DEFAULT_MODEL = 'claude-sonnet-5-5';
+// מודלים שתומכים במעבר אוטומטי למודל חלופי כשהבקשה נדחית בטעות ע"י מסנני הבטיחות
+const FALLBACK_MODELS = ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-fable-5-1'];
+const MAX_TOKENS = 32000;
 let apiKey = null;        // בזיכרון בלבד, נמחק בסגירת הדף
 let keyAfter = null;      // פעולה להמשיך אחרי פתיחת המפתח
 
@@ -869,8 +935,28 @@ function keyStatus(){
   if (apiKey){ b.textContent = 'מפתח: פתוח'; b.classList.add('ok'); }
   else { b.textContent = hasStoredKey() ? 'מפתח: נעול' : 'הגדרת מפתח API'; b.classList.remove('ok'); }
 }
-function openModal(html){ $('modal').innerHTML = html; $('modalWrap').hidden = false; const f = $('modal').querySelector('input'); if (f) f.focus(); }
-function closeModal(){ $('modalWrap').hidden = true; $('modal').innerHTML = ''; }
+let modalReturn = null;   // האלמנט שהפוקוס יחזור אליו כשהחלון נסגר
+function openModal(html){
+  if ($('modalWrap').hidden) modalReturn = document.activeElement;
+  $('modal').innerHTML = html; $('modalWrap').hidden = false;
+  const h = $('modal').querySelector('h3'); if (h) h.id = 'modalTitle';
+  const f = $('modal').querySelector('input:not([type=checkbox]), textarea') || $('modal').querySelector('button'); if (f) f.focus();
+}
+function closeModal(){
+  $('modalWrap').hidden = true; $('modal').innerHTML = '';
+  if (modalReturn && document.contains(modalReturn)) try { modalReturn.focus(); } catch(e){}
+  modalReturn = null;
+}
+// הפוקוס נשאר בתוך החלון הפתוח
+function trapFocus(e){
+  if (e.key !== 'Tab' || $('modalWrap').hidden) return;
+  const els = [...$('modal').querySelectorAll('button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])')].filter(x => !x.disabled && x.offsetParent !== null);
+  if (!els.length) return;
+  const first = els[0], last = els[els.length - 1];
+  if (e.shiftKey && document.activeElement === first){ e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last){ e.preventDefault(); first.focus(); }
+  else if (!$('modal').contains(document.activeElement)){ e.preventDefault(); first.focus(); }
+}
 
 function openKeyPanel(after, msg){
   keyAfter = after || null;
@@ -930,22 +1016,55 @@ function confirmSend(title, text){
   });
 }
 
-async function callClaude(system, user){
+// קריאה ל-Claude בהזרמה (stream), כדי להציג התקדמות ולא להיתקע על בקשות ארוכות.
+// onProgress מקבל את מספר התווים שהתקבלו עד עכשיו.
+async function callClaude(system, user, onProgress){
+  const model = getModel();
+  const headers = {'content-type':'application/json', 'x-api-key':apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true'};
+  const body = {model, max_tokens:MAX_TOKENS, stream:true, system, messages:[{role:'user', content:user}]};
+  if (FALLBACK_MODELS.includes(model)){ headers['anthropic-beta'] = 'server-side-fallback-2026-07-01'; body.fallbacks = 'default'; }
   let res;
-  try {
-    res = await fetch(API_URL, {method:'POST', headers:{
-      'content-type':'application/json', 'x-api-key':apiKey, 'anthropic-version':'2023-06-01',
-      'anthropic-dangerous-direct-browser-access':'true'},
-      body: JSON.stringify({model:getModel(), max_tokens:4000, system, messages:[{role:'user', content:user}]})});
-  } catch (e){ throw new Error('אין חיבור ל-Claude. בדקי את חיבור האינטרנט.'); }
-  const data = await res.json().catch(() => ({}));
+  try { res = await fetch(API_URL, {method:'POST', headers, body: JSON.stringify(body)}); }
+  catch (e){ throw new Error('אין חיבור ל-Claude. בדקי את חיבור האינטרנט.'); }
   if (!res.ok){
+    const data = await res.json().catch(() => ({}));
     const m = (data.error && data.error.message) || '';
     if (res.status === 401) throw new Error('המפתח לא תקין או בוטל (401). פתחי את "הגדרת מפתח" והזיני מפתח חדש.');
     if (res.status === 429) throw new Error('יותר מדי בקשות או שנגמרה המכסה (429). נסי שוב בעוד דקה, ובדקי את תקרת ההוצאה.');
+    if (res.status === 529 || res.status >= 500) throw new Error('השרת של Claude עמוס כרגע (' + res.status + '). נסי שוב בעוד כמה דקות.');
     throw new Error('Claude החזיר שגיאה ' + res.status + (m ? ': ' + m : ''));
   }
-  return (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+  const sse = parseSSE(await readStream(res, n => onProgress && onProgress(n)));
+  if (sse.error) throw new Error('Claude החזיר שגיאה באמצע התשובה: ' + sse.error);
+  if (sse.stop === 'max_tokens') throw new Error('התשובה של Claude נקטעה כי הייתה ארוכה מדי. אפשר לנסות שוב עם פחות שדות מלאים.');
+  if (sse.stop === 'refusal') throw new Error('Claude סירב לבקשה (מסנן הבטיחות). זה קורה לפעמים בטעות; אפשר לנסות שוב או לנסח מחדש את השדות.');
+  return sse.text;
+}
+// קורא את גוף התשובה כטקסט, ומדווח כמה תווים של תוכן הגיעו
+async function readStream(res, onChars){
+  if (!res.body || !res.body.getReader) return res.text();
+  const rd = res.body.getReader(), dec = new TextDecoder();
+  let all = '', chars = 0;
+  for (;;){
+    const {done, value} = await rd.read(); if (done) break;
+    const chunk = dec.decode(value, {stream:true}); all += chunk;
+    const m = chunk.match(/"text_delta","text":"(?:[^"\\]|\\.)*"/g);
+    if (m){ chars += m.reduce((a, s) => a + s.length - 22, 0); onChars(chars); }   // הערכה: אורך המחרוזת בלי העטיפה "text_delta","text":"…"
+  }
+  return all + dec.decode();
+}
+// מפענח אירועי SSE של Messages API לטקסט הסופי, סיבת העצירה ושגיאה אם הייתה
+function parseSSE(raw){
+  let text = '', stop = null, error = null;
+  raw.split(/\r?\n/).forEach(line => {
+    if (!line.startsWith('data:')) return;
+    let ev; try { ev = JSON.parse(line.slice(5)); } catch(e){ return; }
+    if (ev.type === 'content_block_start' && ev.content_block && ev.content_block.type === 'fallback') text = '';   // מודל חלופי ממשיך מכאן; מה שנכתב לפני כן נזרק
+    else if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') text += ev.delta.text;
+    else if (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason) stop = ev.delta.stop_reason;
+    else if (ev.type === 'error') error = (ev.error && ev.error.message) || 'שגיאה לא ידועה';
+  });
+  return {text, stop, error};
 }
 // =====================================================================
 //  טיוטה מוצפנת: שמירה לקובץ ופתיחה ממנו (למעבר בין טלפון למחשב)
@@ -964,9 +1083,15 @@ function collectState(){
   FIELDS.forEach(f => { if (dirty[f[0]]) st.out[f[0]] = {t: $('o_' + f[0]).value, ai: !!aiDone[f[0]]}; });
   return st;
 }
-function hasContent(){ const s = collectState(); return Object.keys(s.chips).length || s.goals.length || Object.keys(s.ctl).some(k => k !== 'gender'); }
+// יש תוכן אם משהו שונה מברירת המחדל (בחירה ראשונה ברשימה, כמו המגדר או סוג הציון במחשבון, לא נחשבת)
+function hasContent(){
+  const s = collectState();
+  const changed = k => { const el = $(k); return !(el && el.tagName === 'SELECT' && el.options[0] && el.options[0].value === s.ctl[k]); };
+  return !!(Object.keys(s.chips).length || s.goals.length || Object.keys(s.out).length || Object.keys(s.ctl).some(changed));
+}
 function restoreState(st){
   document.querySelectorAll('[data-chips] input, #goalChips input').forEach(i => i.checked = false);
+  document.querySelectorAll('.ctl.filled').forEach(c => c.classList.remove('filled'));
   document.querySelectorAll('header input[id], #form input[id], #form select[id], #form textarea[id]').forEach(el => {
     if (DRAFT_SKIP.includes(el.id) || el.type === 'file' || el.type === 'checkbox') return;
     el.value = el.tagName === 'SELECT' ? (el.options[0] ? el.options[0].value : '') : '';
@@ -978,6 +1103,45 @@ function restoreState(st){
   FIELDS.forEach(f => { dirty[f[0]] = false; aiDone[f[0]] = false; });
   update();
   Object.keys(st.out || {}).forEach(k => { const ta = $('o_' + k); if (!ta) return; ta.value = st.out[k].t; dirty[k] = true; aiDone[k] = !!st.out[k].ai; markField(k); autoSize(ta); });
+  saveSession();
+}
+
+// ---- שמירה אוטומטית בלשונית הנוכחית (sessionStorage) ----
+// שורדת רענון, קריסה של הדף ופריקה של הלשונית ברקע בטלפון. נמחקת כשסוגרים את הלשונית.
+const SESSION_STORE = 'ot_form_session_v1';
+function saveSession(){
+  clearTimeout(saveSessionSoon.t);
+  try {
+    if (hasContent()) sessionStorage.setItem(SESSION_STORE, JSON.stringify(collectState()));
+    else sessionStorage.removeItem(SESSION_STORE);
+  } catch(e){}
+}
+function saveSessionSoon(){ clearTimeout(saveSessionSoon.t); saveSessionSoon.t = setTimeout(saveSession, 600); }
+function restoreSession(){
+  let st = null;
+  try { st = JSON.parse(sessionStorage.getItem(SESSION_STORE)); } catch(e){}
+  if (!st || st.v !== 1) return false;
+  try { restoreState(st); } catch(e){ return false; }
+  flash('הטופס שוחזר מהשמירה האוטומטית');
+  return true;
+}
+
+// ---- ניקוי הטופס, עם אפשרות לבטל ----
+let resetUndo = null;
+function resetForm(){
+  if (!hasContent()){ flash('הטופס כבר ריק'); return; }
+  resetUndo = {st: collectState(), cloud: cloudCur};
+  restoreState({});
+  cloudCur = null; polishUndo = null;
+  ['imPaste', 'imExtra', 'imFiles'].forEach(id => { if ($(id)) $(id).value = ''; });
+  importRaw = ''; importRes = null; importSources = [];
+  $('imPreview').innerHTML = '<span class="msg">התצוגה תופיע כאן אחרי הקריאה.</span>'; $('imInfo').innerHTML = ''; $('imStatus').innerHTML = ''; $('imErr').innerHTML = '';
+  $('status').innerHTML = '<div class="okbox">הטופס נוקה. <button class="linkbtn" id="undoReset" type="button">ביטול הניקוי</button></div>';
+}
+function undoReset(){
+  if (!resetUndo) return;
+  restoreState(resetUndo.st); cloudCur = resetUndo.cloud; resetUndo = null;
+  $('status').innerHTML = '<div class="okbox">הטופס שוחזר.</div>';
 }
 async function encryptJson(obj, pass){
   const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
@@ -1000,7 +1164,7 @@ function passVariants(p){
   [p, p.trim()].forEach(b => [b, toHeb(b), toEng(b), toHeb(b.toLowerCase()), swap(b), first(b)].forEach(v => { if (v && !out.includes(v)) out.push(v); }));
   return out;
 }
-async function decryptJson(text, pass){
+async function decryptJson(text, pass, onTry){
   let f;
   if (/^\s*</.test(text)) throw DraftError('נבחר קובץ הטופס עצמו ולא טיוטה. קובצי טיוטה נקראים "טיוטת_דוח_" ואחריו תאריך, עם הסיומת otdraft. בדרך כלל הם בתיקיית ההורדות.');
   try { f = JSON.parse(text); } catch(e){ throw DraftError('הקובץ אינו טיוטה של הטופס, או שהוא נשמר רק בחלקו (למשל הורדה שלא הסתיימה). כדאי לנסות עותק אחר של הקובץ.'); }
@@ -1009,7 +1173,8 @@ async function decryptJson(text, pass){
   try { salt = unb64(f.salt); iv = unb64(f.iv); ct = unb64(f.ct); } catch(e){ throw DraftError('קובץ הטיוטה פגום (התוכן המוצפן שבור). כדאי לנסות עותק אחר של הקובץ.'); }
   if (salt.length !== 16 || iv.length !== 12 || ct.length < 17) throw DraftError('קובץ הטיוטה פגום (חסר בו מידע). כדאי לנסות עותק אחר של הקובץ.');
   const tries = passVariants(pass);
-  for (const v of tries){
+  for (const [i, v] of tries.entries()){
+    if (onTry && i) onTry(i + 1, tries.length);
     const k = await deriveAes(v, salt);
     let pt; try { pt = await crypto.subtle.decrypt({name:'AES-GCM', iv}, k, ct); } catch(e){ continue; }
     const st = JSON.parse(new TextDecoder().decode(pt));
@@ -1055,7 +1220,7 @@ async function draftAction(act){
     let st;
     const btn = $('modal').querySelector('[data-d="open"]'); btn.disabled = true;
     $('dMsg').innerHTML = '<p class="msg">בודק...</p>';
-    try { st = await decryptJson(draftFileText, $('dPass').value); }
+    try { st = await decryptJson(draftFileText, $('dPass').value, (i, n) => { $('dMsg').innerHTML = '<p class="msg">הסיסמה לא התאימה כמו שהוקלדה. בודק טעויות הקלדה נפוצות (' + i + ' מתוך ' + n + ')...</p>'; }); }
     catch (e){ btn.disabled = false; return msg(e.show ? e.message : 'לא הצלחתי לפתוח את הקובץ: ' + e.message); }
     const note = st._passNote; delete st._passNote; delete st._pass;
     try { restoreState(st); }
@@ -1264,19 +1429,35 @@ async function polish(){
   if (!apiKey){ openKeyPanel(polish); return; }
   const preview = user.split('\n')[0] + '\n\n' + Object.keys(payload).map(k => '— ' + fieldTitle(k) + ' —\n' + payload[k]).join('\n\n');
   if (!(await confirmSend('ניסוח בעזרת Claude', preview))) return;
-  const btn = $('polish'); btn.disabled = true; btn.textContent = 'מנסח... (עד דקה)';
+  const btn = $('polish'); btn.disabled = true; btn.textContent = 'מנסח...';
   try {
-    const obj = parseJsonReply(await callClaude(STYLE_GUIDE, user));
+    const obj = parseJsonReply(await callClaude(STYLE_GUIDE, user, n => { btn.textContent = 'מנסח... (' + n + ' תווים)'; }));
+    // שומרים את המצב הקודם של כל שדה, כדי שאפשר יהיה לבטל את הניסוח
+    const before = {};
     let n = 0;
     POLISH_KEYS.forEach(k => {
       if (typeof obj[k] === 'string' && obj[k].trim() && payload[k] !== undefined){
+        before[k] = {t: $('o_' + k).value, dirty: !!dirty[k], ai: !!aiDone[k]};
         $('o_' + k).value = showNames(obj[k].trim()); dirty[k] = true; aiDone[k] = true; markField(k); autoSize($('o_' + k)); n++;
       }
     });
-    $('status').innerHTML = '<div class="okbox">נוסחו ' + n + ' שדות. זו טיוטה: קראי ואשרי כל שדה לפני ההדבקה ב-Cliks.</div>';
+    polishUndo = n ? before : null;
+    $('status').innerHTML = '<div class="okbox">נוסחו ' + n + ' שדות. זו טיוטה: קראי ואשרי כל שדה לפני ההדבקה ב-Cliks.' +
+      (n ? ' <button class="linkbtn" id="undoPolish" type="button">ביטול הניסוח</button>' : '') + '</div>';
+    saveSession();
   } catch (err){
     $('status').innerHTML = '<div class="warnbox">הניסוח נכשל: ' + esc(err.message) + ' הטקסט האוטומטי נשאר כמו שהוא.</div>';
   } finally { btn.disabled = false; btn.textContent = 'ניסוח בעזרת Claude'; }
+}
+let polishUndo = null;   // {שדה: {t, dirty, ai}} מלפני הניסוח האחרון
+function undoPolish(){
+  if (!polishUndo) return;
+  Object.keys(polishUndo).forEach(k => {
+    const p = polishUndo[k]; dirty[k] = p.dirty; aiDone[k] = p.ai;
+    if (p.dirty) $('o_' + k).value = p.t;
+  });
+  polishUndo = null; update(); saveSession();
+  $('status').innerHTML = '<div class="okbox">הניסוח בוטל. השדות חזרו למה שהיה בהם לפני הניסוח.</div>';
 }
 
 // =====================================================================
@@ -1541,7 +1722,9 @@ function setCtl(id, value){
     if (el.value !== '' || ![...el.options].some(o => o.value === String(value))) return false;
     el.value = String(value);
   } else if (el.tagName === 'TEXTAREA'){
-    el.value = el.value.trim() ? el.value.trim() + '\n' + value : String(value);
+    const cur = el.value.trim(), add = String(value).trim();
+    if (cur.includes(add)) return false;   // הקטע כבר נמצא בשדה (למשל אחרי לחיצה כפולה)
+    el.value = cur ? cur + '\n' + add : add;
   } else {
     if (el.value.trim()) return false;
     el.value = String(value);
@@ -1594,9 +1777,9 @@ async function extractWithClaude(){
   const user = 'מגדר: ' + (val('gender') === 'f' ? 'בת' : 'בן') + '.\n\nהשדות האפשריים:\n' + JSON.stringify(extractSchema()) + '\n\nהטקסט מהמסמכים:\n' + body;
   if (!apiKey){ openKeyPanel(extractWithClaude); return; }
   if (!(await confirmSend('שליפה בעזרת Claude', user.split('\n')[0] + '\n\n' + body))) return;
-  const btn = $('imExtract'); btn.disabled = true; btn.textContent = 'שולף... (עד דקה)';
+  const btn = $('imExtract'); btn.disabled = true; btn.textContent = 'שולף...';
   try {
-    const obj = parseJsonReply(await callClaude(EXTRACT_GUIDE, user));
+    const obj = parseJsonReply(await callClaude(EXTRACT_GUIDE, user, n => { btn.textContent = 'שולף... (' + n + ' תווים)'; }));
     const sc = extractSchema();
     let n = 0;
     Object.keys(obj).forEach(k => { if (sc[k] && setCtl(k, obj[k])) n++; });
@@ -1668,7 +1851,8 @@ function exportWord(){
   const r = buildDocx();
   if (!r.count){ flash('אין עדיין תוכן לייצוא'); return; }
   const d = new Date();
-  const fname = 'דוח_אבחון_' + (val('name') || 'מטופל') + '_' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + '.docx';
+  // שם הקובץ בלי שם המטופל: הקובץ נשאר בתיקיית ההורדות ולעיתים מסתנכרן לענן
+  const fname = 'דוח_אבחון_' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') + '_' + String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0') + '.docx';
   const a = document.createElement('a'); a.href = URL.createObjectURL(r.blob); a.download = fname;
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
   flash('הקובץ נשמר בתיקיית ההורדות');
@@ -1733,6 +1917,68 @@ document.addEventListener('change', e => { if (e.target.id === 'dShow') document
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopDict(); });
 
 // =====================================================================
+//  הניסוחים שלי: הוספה ומחיקה של צ'יפים אישיים
+// =====================================================================
+let phraseGroup = null;
+function openAddPhrase(id){
+  const it = chipItem(id); if (!it) return;
+  phraseGroup = id;
+  const card = document.querySelector('[data-chips="' + id + '"]').closest('.card');
+  const title = (card ? card.querySelector('h3').textContent : '') + (it.label ? ' - ' + it.label : '');
+  const ex = it.opts.find(o => !o[3] && o[2] && o[2] !== o[1]) || it.opts[0];
+  openModal('<h3>ניסוח משלי</h3><p class="hint">' + esc(title) + '</p>' +
+    '<label class="lbl" for="pLabel">שם קצר לכפתור</label><input type="text" id="pLabel" maxlength="40">' +
+    '<label class="lbl" for="pPhrase">הניסוח שייכנס לדוח</label><textarea id="pPhrase" style="min-height:70px"></textarea>' +
+    '<p class="hint">הניסוח משתלב במשפט כמו שאר הניסוחים בקבוצה' + (ex ? ', למשל: "' + esc(ex[2] || ex[1]) + '"' : '') + '. ' +
+    'למילים שתלויות במגדר כותבים {זכר|נקבה}, למשל {מתקשה|מתקשה} או {ילד|ילדה}. במקום השם כותבים [שם]. ' +
+    'הניסוחים נשמרים בדפדפן הזה בלבד.</p>' +
+    '<div class="mrow"><button class="btn primary" data-p="add">הוספה</button><button class="btn" data-p="close">ביטול</button></div><div id="dMsg"></div>');
+}
+function addPhrase(){
+  const label = $('pLabel').value.trim(), phrase = $('pPhrase').value.trim().replace(/\s+/g, ' ');
+  if (!label) return cMsg('צריך לתת שם קצר לכפתור.');
+  if (!phrase) return cMsg('צריך לכתוב את הניסוח.');
+  if (nameList().some(x => phrase.includes(x.name))) return cMsg('הניסוח כולל את השם שהוזן למעלה. כתבי [שם] במקומו, כדי שהניסוח יתאים לכל מטופל.');
+  const id = phraseGroup, mine = loadPhrases(), key = 'u' + Date.now().toString(36);
+  (mine[id] = mine[id] || []).push([key, label, phrase]);
+  if (!savePhrases(mine)) return cMsg('הדפדפן לא מאפשר שמירה, ולכן אי אפשר לשמור ניסוחים.');
+  const it = chipItem(id), o = [key, label, phrase, true];
+  it.opts.push(o); OPT[id][key] = {label, phrase};
+  const box = document.querySelector('[data-chips="' + id + '"]');
+  box.querySelector('.addph').insertAdjacentHTML('beforebegin', chipHtml(o));
+  const inp = box.querySelector('input[value="' + CSS.escape(key) + '"]'); inp.checked = true;
+  closeModal(); update(); inp.focus(); flash('הניסוח נוסף ונבחר');
+}
+function openMyPhrases(){
+  const mine = loadPhrases(), rows = [];
+  Object.keys(mine).forEach(id => {
+    const card = document.querySelector('[data-chips="' + id + '"]');
+    const where = card ? card.closest('.card').querySelector('h3').textContent : id;
+    mine[id].forEach(o => rows.push('<li><div class="cpick" style="cursor:default"><b>' + esc(o[1]) + '</b> <small>' + esc(where) + ' · ' + esc(o[2]) + '</small></div>' +
+      '<button class="cdel" data-p="del" data-g="' + esc(id) + '" data-pk="' + esc(o[0]) + '">מחיקה</button></li>'));
+  });
+  openModal('<h3>הניסוחים שלי</h3>' + (rows.length ? '<ul class="clist">' + rows.join('') + '</ul>' :
+    '<p>עדיין אין ניסוחים אישיים. מוסיפים אותם בכפתור "+ ניסוח משלי" שבסוף כל קבוצת בחירה בטופס.</p>') +
+    '<div class="mrow"><button class="btn" data-p="close">סגירה</button></div>');
+}
+function delPhrase(id, key){
+  const mine = loadPhrases();
+  const o = (mine[id] || []).find(x => x[0] === key); if (!o) return;
+  if (!confirm('למחוק את הניסוח "' + o[1] + '"?')) return;
+  mine[id] = mine[id].filter(x => x[0] !== key); if (!mine[id].length) delete mine[id];
+  savePhrases(mine);
+  const it = chipItem(id); if (it) it.opts = it.opts.filter(x => x[0] !== key);
+  if (OPT[id]) delete OPT[id][key];
+  const inp = document.querySelector('[data-chips="' + id + '"] input[value="' + CSS.escape(key) + '"]'); if (inp) inp.closest('label').remove();
+  update(); openMyPhrases();
+}
+function phraseAction(a, el){
+  if (a === 'close') closeModal();
+  else if (a === 'add') addPhrase();
+  else if (a === 'del') delPhrase(el.getAttribute('data-g'), el.getAttribute('data-pk'));
+}
+
+// =====================================================================
 //  כללי
 // =====================================================================
 function flash(s){ $('msg').textContent = s; clearTimeout(flash.t); flash.t = setTimeout(() => $('msg').textContent = '', 2500); }
@@ -1778,9 +2024,25 @@ $('modal').addEventListener('click', e => { const a = e.target.getAttribute && e
 $('modal').addEventListener('click', e => { const a = e.target.getAttribute && e.target.getAttribute('data-k'); if (a) keyAction(a); });
 $('modal').addEventListener('keydown', e => {
   if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
-  const b = $('modal').querySelector('[data-k="unlock"],[data-k="save"],[data-d="save"],[data-d="open"],[data-c="save"]'); if (b){ e.preventDefault(); b.click(); }
+  const b = $('modal').querySelector('[data-k="unlock"],[data-k="save"],[data-d="save"],[data-d="open"],[data-c="save"],[data-p="add"]'); if (b){ e.preventDefault(); b.click(); }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modalWrap').hidden){ const no = $('modal').querySelector('[data-send="no"],[data-k="close"],[data-d="close"],[data-c="close"]'); if (no) no.click(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modalWrap').hidden){ const no = $('modal').querySelector('[data-send="no"],[data-k="close"],[data-d="close"],[data-c="close"],[data-p="close"]'); if (no) no.click(); } });
+document.addEventListener('keydown', trapFocus);
+$('modal').addEventListener('click', e => { const el = e.target.closest && e.target.closest('[data-p]'); if (el) phraseAction(el.getAttribute('data-p'), el); });
+$('form').addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-addph]'); if (b) openAddPhrase(b.getAttribute('data-addph')); });
+$('myPhrases').addEventListener('click', openMyPhrases);
+// תפריט "עוד": נסגר אחרי בחירה, בלחיצה מחוץ לו וב-Escape
+$('more').addEventListener('click', e => { if (e.target.closest('.more-menu button')) $('more').open = false; });
+document.addEventListener('click', e => { if ($('more').open && !$('more').contains(e.target)) $('more').open = false; });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('more').open){ $('more').open = false; $('more').querySelector('summary').focus(); } });
+// בטלפון: מעבר מהיר בין הטופס לדוח
+$('jump').addEventListener('click', () => {
+  const toOut = $('jump').dataset.to !== 'form';
+  (toOut ? document.querySelector('.out-col') : document.querySelector('.form-col')).scrollIntoView({behavior:'smooth', block:'start'});
+});
+if ('IntersectionObserver' in window) new IntersectionObserver(es => es.forEach(en => {
+  const atOut = en.isIntersecting; $('jump').dataset.to = atOut ? 'form' : 'out'; $('jump').textContent = atOut ? 'לטופס ↑' : 'לדוח ↓';
+}), {rootMargin: '0px 0px -60% 0px'}).observe(document.querySelector('.out-col'));
 keyStatus();
 $('exportWord').addEventListener('click', exportWord);
 $('imRead').addEventListener('click', importRead);
@@ -1797,9 +2059,15 @@ $('imPreview').addEventListener('click', e => {
 document.addEventListener('input', e => { const c = e.target.closest && e.target.closest('.ctl.filled'); if (c) c.classList.remove('filled'); });
 document.addEventListener('change', e => { const c = e.target.closest && e.target.closest('.ctl.filled'); if (c) c.classList.remove('filled'); });
 $('copyAll').addEventListener('click', () => copyText(FIELDS.map(f => { const v = $('o_' + f[0]).value.trim(); return v ? f[1] + ':\n' + v : ''; }).filter(Boolean).join('\n\n'), 'כל השדות הועתקו'));
-$('resetAll').addEventListener('click', () => { if (confirm('לנקות את כל הטופס?')) location.reload(); });
-window.addEventListener('beforeunload', e => { if (val('name') || val('bgNote') || chips('reasons').length){ e.preventDefault(); e.returnValue = ''; } });
-update();
+$('resetAll').addEventListener('click', resetForm);
+$('status').addEventListener('click', e => {
+  if (e.target.id === 'undoPolish') undoPolish();
+  if (e.target.id === 'undoReset') undoReset();
+});
+window.addEventListener('beforeunload', e => { saveSession(); if (hasContent()){ e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('pagehide', saveSession);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveSession(); });
+if (!restoreSession()) update();
 </script>
 </body>
 </html>
