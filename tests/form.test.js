@@ -267,7 +267,7 @@ test('סרגל השלבים: ✓ רק לשלב שמולא, וסימן אזהרה
   await tab(page, 's_bg'); await chip(page, 'reasons', 'write');
   await tab(page, 'st_review');
   const cls = await page.$$eval('#stepper .st', els => els.map(e => e.classList.contains('done') ? 'v' : e.classList.contains('warn') ? '!' : '-').join(''));
-  assert.strictEqual(cls, '!-!---!-');   // פתיחה: חסר שם; רקע: חסר גורם מפנה; מטרות: לא סומן אם מומלץ טיפול
+  assert.strictEqual(cls, '!-!!--!-');   // פתיחה: חסר שם; רקע: חסר גורם מפנה; דיווחים: אין חוזקות; מטרות: לא סומן אם מומלץ טיפול
   await page.evaluate(() => { $('name').value = 'נועם'; $('ref').value = 'parents'; update(); });
   const cls2 = await page.$$eval('#stepper .st', els => els.map(e => e.classList.contains('done') ? 'v' : e.classList.contains('warn') ? '!' : '-').join(''));
   assert.strictEqual(cls2.slice(0, 3), 'v-v');
@@ -339,6 +339,25 @@ test('עבודה בלי אינטרנט: הדף נטען מהמטמון', async b
   assert.ok(await page.$('#stepper .st'));
   assert.strictEqual(await page.isVisible('#offline'), true);
   await ctx.close();
+});
+
+test('חוזקות, תחומי עניין ופרשנות הפרופיל החושי נכנסים לדוח', async b => {
+  const page = await fresh(b);
+  await page.selectOption('#gender', 'f');
+  await tab(page, 's_rep');
+  await chip(page, 'strengths', 'curious');
+  await page.fill('#interests', 'ציור');
+  assert.match(await out(page, 'summary'), /בין החוזקות של \[שם\]: סקרנות ורצון להתנסות\./);
+  assert.match(await out(page, 'summary'), /תחומי העניין של \[שם\]: ציור\./);
+  await tab(page, 's_find2');
+  await page.selectOption('#sq_seek', 'mmore');
+  assert.match(await out(page, 'f_sens'), /על פי תוצאות השאלון, \[שם\] מחפשת חוויות תחושתיות באופן ניכר יותר מבני גילה\./);
+  await tab(page, 's_goals');
+  await chip(page, 'recs', 'interests');
+  assert.match(await out(page, 'recs'), /שילוב תחומי העניין של \[שם\] \(ציור\) בטיפול/);
+  await tab(page, 's_find');
+  await page.fill('#beery_vmi_s', '85');
+  assert.match(await out(page, 'f_fm'), /בטווח הנורמה לגילה, בגבול התחתון/);
 });
 
 test('פענוח תשובת Claude בהזרמה, כולל מעבר למודל חלופי', async b => {
