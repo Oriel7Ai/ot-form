@@ -6,9 +6,14 @@ const fs = require('fs');
 const http = require('http');
 const { chromium } = require('playwright');
 
-// מגישים את הדף מ-http מקומי, כמו ב-GitHub Pages (ב-file:// הדפדפן מתעלם משמות קבצים להורדה)
-const HTML = fs.readFileSync(path.resolve(__dirname, '..', 'index.html'));
-const server = http.createServer((q, r) => { r.writeHead(200, {'content-type': 'text/html; charset=utf-8'}); r.end(HTML); });
+// מגישים את קבצי האתר מ-http מקומי, כמו ב-GitHub Pages (localhost נחשב מאובטח, כך שגם עבודה בלי אינטרנט נבדקת)
+const ROOT = path.resolve(__dirname, '..');
+const TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json'};
+const server = http.createServer((q, r) => {
+  const f = path.join(ROOT, decodeURIComponent(q.url.split('?')[0]).replace(/\/$/, '/index.html'));
+  if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()){ r.writeHead(404); return r.end(); }
+  r.writeHead(200, {'content-type': TYPES[path.extname(f)] || 'application/octet-stream'}); r.end(fs.readFileSync(f));
+});
 let URL;
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -215,6 +220,125 @@ test('תכונות קיימות נשמרו: ענן, הכתבה קולית ומח
   await page.evaluate(() => goStep(STEPS.findIndex(s => s.id === 's_find2')));
   await page.fill('#calcScore', '115');
   assert.match(await page.textContent('#calcRes'), /באחוזון 84/);
+});
+
+test('נגישות: לכל שדה בטופס יש שם, ולחיצה על הכותרת מעבירה לשדה', async b => {
+  const page = await fresh(b);
+  const unnamed = await page.$$eval('#pages input:not([type=checkbox]):not([type=file]), #pages select, #pages textarea, #imFiles', els => els.filter(el =>
+    !(el.labels && el.labels.length) && !el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby')).map(el => el.id));
+  assert.deepStrictEqual(unnamed, []);
+  await tab(page, 's_bg');
+  await page.click('label[for="week"]');
+  assert.strictEqual(await page.evaluate(() => document.activeElement.id), 'week');
+  assert.match(await page.getAttribute('#stepper [data-step="2"]', 'aria-label'), /רקע/);
+  assert.strictEqual(await page.$eval('#ref', el => el.options[0].textContent), '— לא נבחר —');
+});
+
+test('"הכול תואם גיל" לא דורס בחירות קיימות, ואפשר לבטל', async b => {
+  const page = await fresh(b);
+  await tab(page, 's_find');
+  await page.selectOption('#coop', 'part');
+  await chip(page, 'beh', 'attShort');
+  await page.click('[data-norm="התנהגות ושיתוף פעולה"]');
+  assert.strictEqual(await page.$eval('#coop', e => e.value), 'part');
+  assert.strictEqual(await page.$eval('#eye', e => e.value), 'good');
+  const c = await page.evaluate(() => ['attShort','attOk','motiv'].map(k => chipInput('beh', k).checked));
+  assert.deepStrictEqual(c, [true, false, true]);
+  await page.click('#msg .linkbtn');
+  assert.strictEqual(await page.$eval('#eye', e => e.value), '');
+  assert.strictEqual(await page.evaluate(() => chipInput('beh', 'motiv').checked), false);
+});
+
+test('פרופיל פתיחה מחליף את הקודם, ואפשר לבטל אותו', async b => {
+  const page = await fresh(b);
+  await tab(page, 's_bg'); await chip(page, 'reasons', 'write');   // סומן ביד לפני הפרופיל
+  await tab(page, 'st_start');
+  await page.click('[data-preset="preschool"]');
+  await page.click('[data-preset="school"]');
+  assert.deepStrictEqual(await page.evaluate(() => goalOrder), ['write','guide']);
+  assert.strictEqual(await page.evaluate(() => chipInput('reasons', 'fm').checked), false);
+  await page.click('#undoPreset');
+  assert.deepStrictEqual(await page.evaluate(() => goalOrder), []);
+  assert.strictEqual(await page.evaluate(() => chipInput('reasons', 'write').checked), true);   // מה שסומן ביד נשאר
+});
+
+test('סרגל השלבים: ✓ רק לשלב שמולא, וסימן אזהרה לשלב עם חוסר', async b => {
+  const page = await fresh(b);
+  await tab(page, 's_bg'); await chip(page, 'reasons', 'write');
+  await tab(page, 'st_review');
+  const cls = await page.$$eval('#stepper .st', els => els.map(e => e.classList.contains('done') ? 'v' : e.classList.contains('warn') ? '!' : '-').join(''));
+  assert.strictEqual(cls, '!-!---!-');   // פתיחה: חסר שם; רקע: חסר גורם מפנה; מטרות: לא סומן אם מומלץ טיפול
+  await page.evaluate(() => { $('name').value = 'נועם'; $('ref').value = 'parents'; update(); });
+  const cls2 = await page.$$eval('#stepper .st', els => els.map(e => e.classList.contains('done') ? 'v' : e.classList.contains('warn') ? '!' : '-').join(''));
+  assert.strictEqual(cls2.slice(0, 3), 'v-v');
+});
+
+test('בדיקת גיל: חודשים מעל 11 מקבלים אזהרה', async b => {
+  const page = await fresh(b);
+  await page.fill('#ageY', '4'); await page.fill('#ageM', '14');
+  assert.match(await page.textContent('#ageMsg'), /בין 0 ל-11/);
+  await page.fill('#ageM', '2');
+  assert.strictEqual(await page.textContent('#ageMsg'), '');
+});
+
+test('שדה דוח ריק מוצג מכווץ ואפשר להוסיף בו טקסט', async b => {
+  const page = await fresh(b);
+  await tab(page, 'st_review');
+  assert.strictEqual(await page.isVisible('#o_famResp'), false);
+  await page.click('[data-addtxt="famResp"]');
+  await page.fill('#o_famResp', 'ההורים שותפים לתוכנית');
+  assert.strictEqual(await out(page, 'famResp'), 'ההורים שותפים לתוכנית');
+});
+
+test('פרטי המאבחנת נכנסים לקובץ ה-Word', async b => {
+  const page = await fresh(b);
+  await page.click('#more summary'); await page.click('#meBtn');
+  await page.fill('#meinst', 'המכון להתפתחות הילד'); await page.fill('#mename', 'רות כהן'); await page.fill('#merole', 'מרפאה בעיסוק');
+  await page.click('[data-p="mesave"]');
+  await page.fill('#name', 'נועם');
+  const xml = await page.evaluate(async () => new TextDecoder().decode(await buildDocx().blob.arrayBuffer()));
+  assert.ok(xml.includes('המכון להתפתחות הילד'));
+  assert.ok(xml.includes('רות כהן, מרפאה בעיסוק'));
+});
+
+test('ענן: Ctrl+S מעדכן את הטיוטה הפתוחה ומציג מתי נשמרה', async b => {
+  const page = await fresh(b);
+  let patched = 0;
+  await page.route(/googleapis\.com\/upload\/drive\/v3\/files\/abc/, r => { patched++; r.fulfill({status: 200, body: '{}'}); });
+  await page.route(/googleapis\.com\/drive\/v3\/files\?/, r => r.fulfill({status: 200, contentType: 'application/json', body: '{"files":[]}'}));
+  await page.route(/googleapis\.com\/upload\/drive\/v3\/files\?/, r => r.fulfill({status: 200, contentType: 'application/json', body: '{"id":"ph","name":"ot-form-phrases.json"}'}));
+  await page.evaluate(async () => {
+    window.GOOGLE_CLIENT_ID_OK = true;
+    gTok = {token: 't', exp: Date.now() + 3600e3};
+    gAesKey = await crypto.subtle.importKey('raw', new Uint8Array(32), {name: 'AES-GCM'}, false, ['encrypt', 'decrypt']);
+    setCloudCur({id: 'abc', name: 'תיק 12.otdraft'});
+  });
+  assert.match(await page.textContent('#cloudInfo'), /נשמר בענן/);
+  await page.fill('#name', 'נועם');
+  assert.match(await page.textContent('#cloudInfo'), /שינויים שלא נשמרו/);
+  await page.keyboard.press('Control+s');
+  await page.waitForFunction(() => /נשמר בענן/.test($('cloudInfo').textContent));
+  assert.strictEqual(patched, 1);
+});
+
+test('ניסוחים אישיים: מיזוג בין מכשירים בלי להחזיר ניסוח שנמחק', async b => {
+  const page = await fresh(b);
+  const r = await page.evaluate(() => mergePhrases({gm: [['u1','א','א1']]}, {gm: [['u2','ב','ב1'], ['u3','ג','ג1']], fm: [['u4','ד','ד1']]}, ['u3']));
+  assert.deepStrictEqual(r, {gm: [['u1','א','א1'], ['u2','ב','ב1']], fm: [['u4','ד','ד1']]});
+});
+
+test('עבודה בלי אינטרנט: הדף נטען מהמטמון', async b => {
+  const ctx = await b.newContext();
+  await ctx.route(u => !u.href.startsWith(URL), r => r.abort());
+  const page = await ctx.newPage();
+  await page.goto(URL);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  await page.reload();   // עכשיו הדף בשליטת ה-service worker
+  await ctx.setOffline(true);
+  await page.reload();
+  assert.ok(await page.$('#stepper .st'));
+  assert.strictEqual(await page.isVisible('#offline'), true);
+  await ctx.close();
 });
 
 test('פענוח תשובת Claude בהזרמה, כולל מעבר למודל חלופי', async b => {

@@ -3,8 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- הדף יכול לתקשר רק עם השרת של Claude (api.anthropic.com), ורק בלחיצה על כפתור ואחרי אישור. שום כתובת אחרת לא נגישה ממנו. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://accounts.google.com; script-src 'unsafe-inline' https://accounts.google.com/gsi/client; frame-src https://accounts.google.com; img-src data:; connect-src https://api.anthropic.com https://www.googleapis.com https://accounts.google.com">
+<!-- הדף מתקשר רק עם Claude (api.anthropic.com) ועם Google (כניסה ושמירה בענן). רכיב הכניסה של Google נטען עם הדף; נתונים נשלחים רק בלחיצה של המשתמשת. שום כתובת אחרת לא נגישה ממנו. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://accounts.google.com; script-src 'unsafe-inline' https://accounts.google.com/gsi/client; frame-src https://accounts.google.com; img-src data: 'self'; connect-src https://api.anthropic.com https://www.googleapis.com https://accounts.google.com; manifest-src 'self'; worker-src 'self'">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<meta name="theme-color" content="#1e5aa8">
 <title>טופס דוח אבחון</title>
 <style>
 :root{
@@ -35,6 +38,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 "Segoe UI",Ar
 .brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--blue-dark);font-size:17px}
 .brand .mark{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--blue) 0 60%,var(--green) 60% 100%);position:relative}
 .brand .mark::after{content:"";position:absolute;width:9px;height:9px;border-radius:50%;background:var(--yellow);top:5px;left:5px}
+.cloudinfo{font-size:13px;color:var(--green-ink);background:var(--green-soft);border-radius:999px;padding:2px 10px}
+.cloudinfo.dirty{color:var(--warn);background:var(--yellow-soft)}
 #who{background:var(--blue-soft);color:var(--blue-dark);border-radius:999px;padding:3px 12px;font-size:14px;font-weight:600}
 .topactions{margin-inline-start:auto;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 #stepper{max-width:960px;margin:0 auto;padding:0 24px 12px;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
@@ -47,6 +52,8 @@ body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 "Segoe UI",Ar
 .st.cur{color:var(--blue-dark);font-weight:700;background:var(--blue-soft)}
 .st.cur .num{background:var(--blue);color:var(--blue-ink)}
 .st:hover:not(.cur){background:var(--soft)}
+.st.warn .num{background:var(--yellow);color:var(--yellow-ink);font-size:0}
+.st.warn .num::before{content:"!";font-size:14px}
 
 /* ---- דפים ---- */
 #pages{max-width:860px;margin:0 auto;padding:36px 24px 96px}
@@ -141,7 +148,12 @@ button.btn:disabled{opacity:.55;cursor:wait}
 .of textarea{min-height:48px;background:var(--bg)}
 .of button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--blue-dark);padding:4px 12px;border-radius:8px;cursor:pointer}
 .of button:hover{background:var(--blue-soft)}
-.of.empty{display:none}
+.of .addtxt{display:none}
+/* שדה ריק מוצג מכווץ, עם כפתור להוספת טקסט */
+.of.empty:not(.open){padding:10px 16px;border-style:dashed;background:transparent}
+.of.empty:not(.open) .t{margin:0}
+.of.empty:not(.open) > textarea, .of.empty:not(.open) .mic-wrap, .of.empty [data-copy]{display:none}
+.of.empty:not(.open) .addtxt{display:inline-block}
 .msg{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--blue-dark);color:var(--panel);padding:10px 18px;border-radius:999px;font-size:15px;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.2);max-width:90vw;text-align:center}
 .msg:empty{display:none}
 .warnbox{background:var(--yellow-soft);color:var(--warn);border:1px solid var(--yellow-line);border-radius:10px;padding:10px 14px;font-size:15px;margin-bottom:10px}
@@ -227,6 +239,8 @@ input[data-auto="1"]{background:var(--green-soft);color:var(--green-ink);font-we
   <div class="top">
     <div class="brand"><span class="mark" aria-hidden="true"></span><span class="t">דוח אבחון · ריפוי בעיסוק</span></div>
     <span id="who"></span>
+    <span id="cloudInfo" class="cloudinfo" hidden></span>
+    <span id="offline" class="cloudinfo dirty" hidden title="הטופס עובד כרגיל. ניסוח עם Claude ושמירה בענן יחזרו כשיהיה חיבור.">אין חיבור לאינטרנט</span>
     <div class="topactions">
       <button class="btn" id="cloudSave">שמירה בענן</button>
       <button class="btn" id="cloudOpen">פתיחה מהענן</button>
@@ -237,6 +251,7 @@ input[data-auto="1"]{background:var(--green-soft);color:var(--green-ink);font-we
           <button class="btn" id="openDraft" role="menuitem">פתיחת טיוטה מקובץ</button>
           <button class="btn" id="keyBtn" role="menuitem">הגדרת מפתח API</button>
           <button class="btn" id="myPhrases" role="menuitem">הניסוחים שלי</button>
+          <button class="btn" id="meBtn" role="menuitem">פרטי המאבחנת ל-Word</button>
           <button class="btn" id="resetAll" role="menuitem">ניקוי הטופס</button>
         </div>
       </details>
@@ -500,14 +515,14 @@ const SECTIONS = [
 
 const IMPORT_HTML = `
 <div class="card"><h3>1. קבצים לקריאה</h3>
-  <div class="ctl"><span class="lbl">קובצי Word (docx) או טקסט (txt)</span><input type="file" id="imFiles" multiple accept=".docx,.txt"></div>
-  <div class="ctl"><span class="lbl">או הדביקי טקסט (למשל מתוך Cliks או מ-PDF)</span><textarea id="imPaste" style="min-height:90px"></textarea></div>
+  <div class="ctl"><label class="lbl" for="imFiles">קובצי Word (docx) או טקסט (txt)</label><input type="file" id="imFiles" multiple accept=".docx,.txt"></div>
+  <div class="ctl"><label class="lbl" for="imPaste">או הדביקי טקסט (למשל מתוך Cliks או מ-PDF)</label><textarea id="imPaste" style="min-height:90px"></textarea></div>
   <button class="btn primary" id="imRead">קריאה</button>
   <p class="hint">הקבצים נקראים בתוך הדף, במכשיר שלך. שום דבר לא נשלח בשלב הזה.</p>
   <div id="imErr"></div>
 </div>
 <div class="card"><h3>2. בדיקת פרטים מזהים</h3>
-  <div class="ctl"><span class="lbl">שמות נוספים בקובץ להסרה (רופאים, גננת, מוסדות)</span><input type="text" id="imExtra" placeholder="מופרדים בפסיק"><p class="hint">השם של הילד ושמות מהשדה "שמות נוספים" למעלה מוסרים אוטומטית. לחיצה על מילה בתצוגה מסירה אותה.</p></div>
+  <div class="ctl"><label class="lbl" for="imExtra">שמות נוספים בקובץ להסרה (רופאים, גננת, מוסדות)</label><input type="text" id="imExtra" placeholder="מופרדים בפסיק"><p class="hint">השם של הילד ושמות מהשדה "שמות נוספים" למעלה מוסרים אוטומטית. לחיצה על מילה בתצוגה מסירה אותה.</p></div>
   <div id="imInfo"></div>
   <div id="imPreview"><span class="msg">התצוגה תופיע כאן אחרי הקריאה.</span></div>
   <p class="hint">ירוק = הוסר. צהוב = חשוד, כדאי לבדוק. רק הטקסט שבתצוגה הזו יכול לצאת מהמחשב, ורק בלחיצה על "שליפה בעזרת Claude".</p>
@@ -576,45 +591,55 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 
 function renderItem(it){
   if (it.type === 'row') return '<div class="row">' + it.items.map(renderItem).join('') + '</div>';
-  const lbl = it.label ? '<span class="lbl">' + esc(it.label) + '</span>' : '';
+  // כותרת מקושרת לשדה (for), כדי שקורא מסך יקריא אותה ולחיצה עליה תעביר לשדה
+  const field = ['select','text','number','textarea'].includes(it.type);
+  const lbl = it.label ? (field ? '<label class="lbl" for="' + it.id + '">' : '<span class="lbl" id="lb_' + it.id + '">') + esc(it.label) + (field ? '</label>' : '</span>') : '';
+  const aria = it.label ? '' : ' aria-label="' + esc(cardTitleOf(it.id)) + '"';
   const hint = it.hint ? '<p class="hint">' + esc(it.hint) + '</p>' : '';
   if (it.opts){ OPT[it.id] = {}; it.opts.forEach(o => OPT[it.id][o[0]] = {label:o[1], phrase:o[2] || o[1]}); }
   switch (it.type){
     case 'select':
-      return '<div class="ctl">' + lbl + '<select id="' + it.id + '">' + it.opts.map(o => '<option value="' + esc(o[0]) + '">' + esc(o[1]) + '</option>').join('') + '</select>' + hint + '</div>';
+      return '<div class="ctl">' + lbl + '<select id="' + it.id + '"' + aria + '>' + it.opts.map(optHtml).join('') + '</select>' + hint + '</div>';
     case 'chips':
-      return '<div class="ctl">' + lbl + '<div class="chips" data-chips="' + it.id + '">' + it.opts.map(chipHtml).join('') +
+      return '<div class="ctl">' + lbl + '<div class="chips" role="group" ' + (it.label ? 'aria-labelledby="lb_' + it.id + '"' : aria.trim()) + ' data-chips="' + it.id + '">' + it.opts.map(chipHtml).join('') +
         (NO_CUSTOM.includes(it.id) ? '' : '<button type="button" class="addph" data-addph="' + it.id + '" title="הוספת ניסוח משלי לקבוצה הזו">+ ניסוח משלי</button>') + '</div>' + hint + '</div>';
-    case 'text': return '<div class="ctl">' + lbl + '<input type="text" id="' + it.id + '">' + hint + '</div>';
-    case 'number': return '<div class="ctl">' + lbl + '<input type="number" id="' + it.id + '">' + hint + '</div>';
-    case 'textarea': return '<div class="ctl">' + lbl + '<textarea id="' + it.id + '"></textarea>' + hint + '</div>';
+    case 'text': return '<div class="ctl">' + lbl + '<input type="text" id="' + it.id + '"' + aria + '>' + hint + '</div>';
+    case 'number': return '<div class="ctl">' + lbl + '<input type="number" id="' + it.id + '"' + aria + '>' + hint + '</div>';
+    case 'textarea': return '<div class="ctl">' + lbl + '<textarea id="' + it.id + '"' + aria + '></textarea>' + hint + '</div>';
     case 'scores':
       return '<div class="ctl">' + lbl + '<table class="sc"><tr><th>מדד</th><th>אחוזון</th>' + (it.noStd ? '' : '<th>ציון תקן</th>') + '</tr>' +
-        it.rows.map(r => '<tr><td>' + esc(r[1]) + '</td><td><input type="number" min="0" max="100" id="' + it.id + '_' + r[0] + '_p"></td>' + (it.noStd ? '' : '<td><input type="number" id="' + it.id + '_' + r[0] + '_s"></td>') + '</tr>').join('') +
+        it.rows.map(r => '<tr><td>' + esc(r[1]) + '</td><td><input type="number" min="0" max="100" id="' + it.id + '_' + r[0] + '_p" aria-label="' + esc(r[1]) + ' - אחוזון"></td>' + (it.noStd ? '' : '<td><input type="number" id="' + it.id + '_' + r[0] + '_s" aria-label="' + esc(r[1]) + ' - ציון תקן"></td>') + '</tr>').join('') +
         '</table><p class="hint">' + (it.noStd ? '' : 'הקלדת ציון תקן ממלאת את האחוזון אוטומטית (ממוצע 100, ס"ת 15). אחוזון מחושב מסומן בצבע. אם יש אחוזון מהמדריך, הקלידי אותו והוא יקבע. ') + 'הניסוח לפי אחוזון נוצר אוטומטית ואפשר לערוך אותו בשדה הפלט.</p></div>';
     case 'ayres':
-      return '<div class="ctl">' + lbl + '<table class="sc">' + AYRES_ITEMS.map(r => '<tr><td>' + esc(r[1]) + '</td><td><select id="ay_' + r[0] + '">' + AYRES_LEVELS.map(l => '<option value="' + l[0] + '">' + l[1] + '</option>').join('') + '</select></td></tr>').join('') + '</table></div>';
+      return '<div class="ctl">' + lbl + '<table class="sc">' + AYRES_ITEMS.map(r => '<tr><td>' + esc(r[1]) + '</td><td><select id="ay_' + r[0] + '" aria-label="' + esc(r[1]) + '">' + AYRES_LEVELS.map(l => '<option value="' + l[0] + '">' + l[1] + '</option>').join('') + '</select></td></tr>').join('') + '</table></div>';
     case 'sp2':
       return '<div class="ctl">' + lbl + '<table class="sc"><tr><th colspan="2">רביעים</th></tr>' + SP2_QUADS.map(r => spRow('sq_' + r[0], r[1])).join('') +
         '<tr><th colspan="2">תחומי חישה</th></tr>' + SP2_SECTIONS.map(r => spRow('ss_' + r[0], r[1])).join('') + '</table></div>';
     case 'sensory':
-      return '<div class="ctl">' + lbl + '<table class="sc">' + SENS_MOD.map(r => '<tr><td style="width:70px">' + r[1] + '</td><td><select id="ps_' + r[0] + '"><option value=""></option><option value="none">ללא רגישות</option><option value="sens">רגישות</option><option value="seek">חיפוש תחושה</option></select></td><td><input type="text" id="psn_' + r[0] + '" placeholder="פירוט"></td></tr>').join('') + '</table></div>';
+      return '<div class="ctl">' + lbl + '<table class="sc">' + SENS_MOD.map(r => '<tr><td style="width:70px">' + r[1] + '</td><td><select id="ps_' + r[0] + '" aria-label="' + r[1] + '"><option value="">— לא נבחר —</option><option value="none">ללא רגישות</option><option value="sens">רגישות</option><option value="seek">חיפוש תחושה</option></select></td><td><input type="text" id="psn_' + r[0] + '" placeholder="פירוט" aria-label="' + r[1] + ' - פירוט"></td></tr>').join('') + '</table></div>';
     case 'calc':
       return '<div class="ctl"><div class="row">' +
-        '<div class="ctl"><span class="lbl">סוג הציון</span><select id="calcScale">' + SCALES.map(x => '<option value="' + x[0] + '">' + esc(x[1]) + '</option>').join('') + '</select></div>' +
-        '<div class="ctl"><span class="lbl">שם המבחן / תת-המבחן</span><input type="text" id="calcName" placeholder="למשל: קואורדינציה דו-צדדית"></div>' +
-        '<div class="ctl"><span class="lbl">ציון</span><input type="number" step="any" id="calcScore"></div></div>' +
+        '<div class="ctl"><label class="lbl" for="calcScale">סוג הציון</label><select id="calcScale">' + SCALES.map(x => '<option value="' + x[0] + '">' + esc(x[1]) + '</option>').join('') + '</select></div>' +
+        '<div class="ctl"><label class="lbl" for="calcName">שם המבחן / תת-המבחן</label><input type="text" id="calcName" placeholder="למשל: קואורדינציה דו-צדדית"></div>' +
+        '<div class="ctl"><label class="lbl" for="calcScore">ציון</label><input type="number" step="any" id="calcScore"></div></div>' +
         '<div class="calcres" id="calcRes"></div><button class="btn" id="calcCopy" type="button">העתקת המשפט</button>' +
         '<p class="hint">חישוב לפי התפלגות נורמלית. אם במדריך המבחן מופיע אחוזון אחר, הוא הקובע.</p></div>';
     case 'goals':
-      return '<div class="ctl"><span class="lbl">בנק מטרות (סדר הבחירה = סדר המטרות)</span><div id="goalSugg"></div><div class="chips" id="goalChips">' + GOALS.map(g => '<label><input type="checkbox" value="' + g[0] + '">' + esc(g[1]) + '</label>').join('') + '</div></div>';
+      return '<div class="ctl"><span class="lbl" id="lb_goalChips">בנק מטרות (סדר הבחירה = סדר המטרות)</span><div id="goalSugg"></div><div class="chips" role="group" aria-labelledby="lb_goalChips" id="goalChips">' + GOALS.map(g => '<label><input type="checkbox" value="' + g[0] + '">' + esc(g[1]) + '</label>').join('') + '</div></div>';
   }
   return '';
 }
-function spRow(id, label){ return '<tr><td>' + esc(label) + '</td><td><select id="' + id + '">' + SP2_LEVELS.map(l => '<option value="' + l[0] + '">' + l[1] + '</option>').join('') + '</select></td></tr>'; }
+function spRow(id, label){ return '<tr><td>' + esc(label) + '</td><td><select id="' + id + '" aria-label="' + esc(label) + '">' + SP2_LEVELS.map(l => '<option value="' + l[0] + '">' + l[1] + '</option>').join('') + '</select></td></tr>'; }
+function optHtml(o){ return '<option value="' + esc(o[0]) + '">' + esc(o[0] === '' && !o[1] ? '— לא נבחר —' : o[1]) + '</option>'; }
+// שם הכרטיס שבו נמצא פריט (לשדות בלי כותרת משלהם)
+function cardTitleOf(id){
+  let t = '';
+  SECTIONS.forEach(s => s.cards.forEach(c => { const walk = it => { if (it.type === 'row') it.items.forEach(walk); else if (it.id === id) t = c.title; }; c.items.forEach(walk); }));
+  return t;
+}
 function chipHtml(o){ return '<label' + (o[3] ? ' class="mine"' : '') + '><input type="checkbox" value="' + esc(o[0]) + '">' + esc(o[1]) + '</label>'; }
 
-// ---------- הניסוחים שלי: צ'יפים שהמשתמשת מוסיפה, נשמרים בדפדפן הזה ----------
+// ---------- הניסוחים שלי: צ'יפים שהמשתמשת מוסיפה, נשמרים בדפדפן ומסונכרנים לענן ----------
 // קבוצות שבהן הטקסט נבנה מהתווית או מהבחירה עצמה, ולכן ניסוח חופשי לא מתאים להן
 const NO_CUSTOM = ['joint', 'shapes', 'blocks'];
 const PHRASE_STORE = 'ot_form_phrases_v1';
@@ -642,14 +667,15 @@ const START_HTML = `
 <section class="card">
   <h3>פרטי המטופל/ת</h3>
   <div class="row">
-    <div class="ctl"><span class="lbl">שם פרטי</span><input type="text" id="name" autocomplete="off"><p class="hint">נשאר במכשיר ולא נשלח לשום מקום.</p></div>
-    <div class="ctl"><span class="lbl">מגדר</span><select id="gender"><option value="m">בן</option><option value="f">בת</option></select></div>
+    <div class="ctl"><label class="lbl" for="name">שם פרטי</label><input type="text" id="name" autocomplete="off"><p class="hint">נשאר במכשיר ולא נשלח לשום מקום.</p></div>
+    <div class="ctl"><label class="lbl" for="gender">מגדר</label><select id="gender"><option value="m">בן</option><option value="f">בת</option></select></div>
   </div>
   <div class="row">
-    <div class="ctl"><span class="lbl">גיל: שנים</span><input type="number" id="ageY" min="0" max="18" inputmode="numeric"></div>
-    <div class="ctl"><span class="lbl">חודשים</span><input type="number" id="ageM" min="0" max="11" inputmode="numeric"></div>
+    <div class="ctl"><label class="lbl" for="ageY">גיל: שנים</label><input type="number" id="ageY" min="0" max="18" inputmode="numeric"></div>
+    <div class="ctl"><label class="lbl" for="ageM">חודשים</label><input type="number" id="ageM" min="0" max="11" inputmode="numeric"></div>
   </div>
-  <div class="ctl"><span class="lbl">שמות נוספים שמופיעים בדוח (אחים וכו')</span><input type="text" id="names2" placeholder="מופרדים בפסיק" autocomplete="off"><p class="hint">יוסתרו לפני כל שליחה ל-Claude, ויחזרו לטקסט רק במכשיר.</p></div>
+  <div id="ageMsg"></div>
+  <div class="ctl"><label class="lbl" for="names2">שמות נוספים שמופיעים בדוח (אחים וכו')</label><input type="text" id="names2" placeholder="מופרדים בפסיק" autocomplete="off"><p class="hint">יוסתרו לפני כל שליחה ל-Claude, ויחזרו לטקסט רק במכשיר.</p></div>
 </section>
 <section class="card">
   <h3>פרופיל פתיחה <span class="opt">לא חובה</span></h3>
@@ -727,7 +753,7 @@ function renderCard(c){
 }
 function renderForm(){
   applyPhrases();
-  $('stepper').innerHTML = STEPS.map((s, i) => '<button type="button" class="st" data-step="' + i + '"><span class="num">' + (i + 1) + '</span><span class="lbl2">' + esc(s.short) + '</span></button>').join('');
+  $('stepper').innerHTML = STEPS.map((s, i) => '<button type="button" class="st" data-step="' + i + '" aria-label="שלב ' + (i + 1) + ': ' + esc(s.title) + '"><span class="num">' + (i + 1) + '</span><span class="lbl2">' + esc(s.short) + '</span></button>').join('');
   $('pages').innerHTML = STEPS.map((s, i) => {
     const body = s.html || s.cards.map(renderCard).join('');
     const peek = s.peek ? '<details class="peek"><summary>כך זה ייכתב בדוח</summary><div class="peekbody" id="peek_' + s.id + '"></div></details>' : '';
@@ -748,6 +774,7 @@ function renderForm(){
     const pr = e.target.closest('[data-preset]'); if (pr) { applyPreset(pr.dataset.preset); return; }
     const sa = e.target.closest('[data-showall]'); if (sa) { showAll = !showAll; updateExtras(); return; }
     if (e.target.id === 'addSugg') { suggestGoals().forEach(s => addGoal(s.k)); update(); }
+    if (e.target.id === 'undoPreset') { revertPreset(); $('presetMsg').innerHTML = ''; update(); saveSession(); flash('הפרופיל בוטל'); }
   });
   // בחירה סותרת מבטלת את הקודמת
   document.addEventListener('change', e => {
@@ -760,30 +787,73 @@ function renderForm(){
 function goStep(i){
   cur = Math.max(0, Math.min(STEPS.length - 1, i));
   document.querySelectorAll('.page').forEach((p, j) => p.classList.toggle('on', j === cur));
-  document.querySelectorAll('#stepper .st').forEach((b, j) => { b.classList.toggle('cur', j === cur); b.classList.toggle('done', j < cur); if (j === cur) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current'); });
+  document.querySelectorAll('#stepper .st').forEach((b, j) => { b.classList.toggle('cur', j === cur); if (j === cur) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current'); });
   try { sessionStorage.setItem(SESSION_STORE + '_step', cur); } catch(e){}
   const cb = document.querySelector('#stepper .st.cur'); if (cb && cb.scrollIntoView) cb.scrollIntoView({block:'nearest', inline:'center'});
   window.scrollTo(0, 0);
   if ($('o_tools')) updateExtras();
   if (STEPS[cur].final && $('o_tools')) FIELDS.forEach(f => autoSize($('o_' + f[0])));
 }
-function setChip(id, k, on){ const i = document.querySelector('[data-chips="' + id + '"] input[value="' + k + '"]'); if (i) i.checked = on; }
+// ---- שינויים שאפשר לבטל: כל פעולה רושמת בדיוק מה שינתה, והביטול מחזיר רק את זה ----
+const newRec = () => ({chips:[], sels:[], goals:[]});
+const chipInput = (id, k) => document.querySelector('[data-chips="' + id + '"] input[value="' + CSS.escape(k) + '"]');
+const markFilled = el => { const c = el.closest('.ctl'); if (c) c.classList.add('filled'); };
+function recChip(rec, id, k, on){
+  const i = chipInput(id, k); if (!i || i.checked === on) return false;
+  rec.chips.push([id, k, i.checked]); i.checked = on; if (on) markFilled(i); return true;
+}
+function recSel(rec, id, v){
+  const el = $(id); if (!el || el.value === v) return false;
+  if (el.tagName === 'SELECT' && ![...el.options].some(o => o.value === v)) return false;
+  rec.sels.push([id, el.value]); el.value = v; markFilled(el); return true;
+}
+function recGoal(rec, k){ if (goalOrder.includes(k)) return false; rec.goals.push(k); addGoal(k); return true; }
+function undoRec(rec){
+  rec.chips.slice().reverse().forEach(([id, k, prev]) => { const i = chipInput(id, k); if (i) i.checked = prev; });
+  rec.sels.slice().reverse().forEach(([id, prev]) => { if ($(id)) $(id).value = prev; });
+  goalOrder = goalOrder.filter(k => !rec.goals.includes(k));
+  rec.goals.forEach(k => { const i = document.querySelector('#goalChips input[value="' + k + '"]'); if (i) i.checked = false; });
+}
+// האם סימון k בקבוצה id סותר משהו שכבר מסומן
+function conflicts(id, k){
+  return EXCL_GROUPS.some(g => { if (g[0] !== id) return false; const opp = g[1] === k ? g[2] : g[2] === k ? g[1] : null; const i = opp && chipInput(id, opp); return !!(i && i.checked); });
+}
+// "הכול תואם גיל": משלים רק מה שעדיין לא נבחר. לא מוחק קשיים שכבר סומנו ולא דורס בחירות.
 function applyNormal(title){
   const n = NORM[title]; if (!n) return;
-  Object.entries(n.off || {}).forEach(([id, ks]) => ks.forEach(k => setChip(id, k, false)));
-  Object.entries(n.on || {}).forEach(([id, ks]) => ks.forEach(k => setChip(id, k, true)));
-  Object.entries(n.sel || {}).forEach(([id, v]) => { if ($(id)) $(id).value = v; });
-  update(); flash('סומן "תואם גיל". עכשיו אפשר לסמן רק את מה שחורג.');
+  const rec = newRec(); let skipped = 0;
+  Object.entries(n.on || {}).forEach(([id, ks]) => ks.forEach(k => { if (conflicts(id, k)) skipped++; else recChip(rec, id, k, true); }));
+  Object.entries(n.sel || {}).forEach(([id, v]) => { if ($(id) && $(id).value === '') recSel(rec, id, v); else if ($(id) && $(id).value !== v) skipped++; });
+  update(); saveSession();
+  const done = rec.chips.length + rec.sels.length;
+  const msg = !done ? 'לא היה מה להשלים: כל הבחירות בתחום כבר מולאו.' :
+    'סומן "תואם גיל"' + (skipped ? '. מה שכבר סימנת לא שונה' : '') + '. עכשיו אפשר לסמן רק את מה שחורג.';
+  if (done) flashAction(msg, 'ביטול', () => { undoRec(rec); update(); saveSession(); }); else flash(msg);
 }
 function addGoal(k){ if (goalOrder.includes(k)) return; goalOrder.push(k); const i = document.querySelector('#goalChips input[value="' + k + '"]'); if (i) i.checked = true; }
+// פרופיל פתיחה: פרופיל חדש מחליף את הקודם (מה שהקודם סימן ועדיין לא שונה, מוסר)
+let presetActive = null;   // {id, rec}
+function revertPreset(){
+  if (!presetActive) return;
+  undoRec(presetActive.rec); presetActive = null;
+  document.querySelectorAll('.preset').forEach(b => b.classList.remove('on'));
+}
 function applyPreset(id){
   const p = PRESETS.find(x => x.id === id); if (!p) return;
-  let n = 0;
-  Object.entries(p.set).forEach(([k, v]) => { if (setCtl(k, v)) n++; });
-  p.goals.forEach(g => { if (!goalOrder.includes(g)){ addGoal(g); n++; } });
+  if (presetActive && presetActive.id === id) return;
+  revertPreset();
+  const rec = newRec();
+  Object.entries(p.set).forEach(([k, v]) => {
+    if (Array.isArray(v)) v.forEach(x => recChip(rec, k, x, true));
+    else if ($(k) && $(k).value === '') recSel(rec, k, v);
+  });
+  p.goals.forEach(g => recGoal(rec, g));
+  presetActive = {id, rec};
   document.querySelectorAll('.preset').forEach(b => b.classList.toggle('on', b.dataset.preset === id));
-  update();
-  $('presetMsg').innerHTML = '<div class="okbox" style="margin-top:14px">סומנו ' + n + ' בחירות מהפרופיל "' + esc(p.title) + '". הן מסומנות במסגרת בדפים הבאים, כדי שתעברי עליהן.</div>';
+  update(); saveSession();
+  const n = rec.chips.length + rec.sels.length + rec.goals.length;
+  $('presetMsg').innerHTML = '<div class="okbox" style="margin-top:14px">סומנו ' + n + ' בחירות מהפרופיל "' + esc(p.title) + '". הן מסומנות במסגרת בדפים הבאים, כדי שתעברי עליהן. ' +
+    '<button type="button" class="linkbtn" id="undoPreset">ביטול הפרופיל</button></div>';
 }
 
 // ---- גיל ----
@@ -835,6 +905,7 @@ function runChecks(){
   const ok = t => items.push({ok:true, t});
   const bad = (t, step) => items.push({ok:false, t, step});
   if (val('name')) ok('הוזן שם, והוא ייכנס לדוח במקום [שם].'); else bad('לא הוזן שם. בדוח יופיע [שם].', 'st_start');
+  if (ageProblem()) bad(ageProblem(), 'st_start');
   if (val('ref') && chips('reasons').length) ok('גורם מפנה וסיבות הפניה סומנו.'); else bad('חסר גורם מפנה או סיבת הפניה.', 's_bg');
   const tagged = FIELDS.filter(f => TAG_RE.test($('o_' + f[0]).value)).map(f => f[1]);
   if (tagged.length) bad('נשארו תגיות כמו [יישוב] או [הוסר] ב: ' + tagged.join(', ') + '. השלימי או מחקי אותן בשדות למטה.'); else ok('אין תגיות שנשארו בטקסט.');
@@ -853,6 +924,7 @@ function runChecks(){
   $('checks').innerHTML = (n ? '<p class="checkhead warn">' + (n === 1 ? 'דבר אחד לבדוק' : n + ' דברים לבדוק') + ' לפני ייצוא</p>' : '<p class="checkhead good">הכול נראה מוכן לייצוא</p>') +
     '<ul class="checklist">' + items.map(x => '<li class="' + (x.ok ? 'ok' : 'no') + '"><span class="ic">' + (x.ok ? '✓' : '!') + '</span><span>' + esc(x.t) + '</span>' +
       (x.step ? '<button type="button" class="btn small ghost" data-go="' + stepIndex(x.step) + '">מעבר לתיקון</button>' : '') + '</li>').join('') + '</ul>';
+  return items;
 }
 
 // ---- רענון: תצוגות מקדימות, גיל, הצעות, בדיקה ----
@@ -860,6 +932,8 @@ function updateExtras(){
   const a = ageYears();
   const g = val('gender') === 'f' ? 'בת' : 'בן';
   $('who').textContent = (val('name') || 'מטופל/ת חדש/ה') + (a !== null ? ' · ' + g + ' ' + ageNum() : '');
+  cloudInfo();
+  const ap = ageProblem(); $('ageMsg').innerHTML = ap ? '<div class="warnbox" role="alert">' + esc(ap) + '</div>' : '';
   STEPS.forEach(s => {
     if (s.peek){
       const t = s.peek.map(k => { const v = $('o_' + k).value.trim(); return v ? '<div class="pk"><b>' + esc(fieldTitle(k)) + '</b><div>' + esc(v) + '</div></div>' : ''; }).join('');
@@ -884,7 +958,34 @@ function updateExtras(){
   const missing = sugg.filter(x => !goalOrder.includes(x.k));
   $('goalSugg').innerHTML = sugg.length ? '<div class="suggbox"><b>מוצע לפי הממצאים</b><ul>' + sugg.map(x => '<li' + (goalOrder.includes(x.k) ? ' class="in"' : '') + '><span class="gname">' + esc(goalTitle(x.k)) + '</span> <span class="why">(' + esc(x.why.join(', ')) + ')</span>' + (goalOrder.includes(x.k) ? ' ✓' : '') + '</li>').join('') + '</ul>' +
     (missing.length ? '<button type="button" class="btn small" id="addSugg">הוספת ' + missing.length + ' המוצעות</button>' : '') + '</div>' : '';
-  if ($('checks')) runChecks();
+  const items = $('checks') ? runChecks() : [];
+  markSteps(items);
+}
+// ✓ רק לשלב שמולא בו משהו, וסימן אזהרה לשלב שהבדיקה לפני ייצוא מצאה בו חוסר
+function stepHasContent(el){
+  return [...el.querySelectorAll('input[id], select[id], textarea[id]')].some(x => {
+    if (x.id.startsWith('o_') || x.id.startsWith('calc') || x.type === 'file') return false;
+    if (x.type === 'checkbox') return x.checked;
+    if (x.tagName === 'SELECT') return x.options[0] && x.value !== x.options[0].value;
+    return x.value.trim() !== '';
+  }) || [...el.querySelectorAll('[data-chips] input, #goalChips input')].some(x => x.checked);
+}
+function markSteps(items){
+  const warn = new Set(items.filter(x => !x.ok && x.step).map(x => x.step));
+  document.querySelectorAll('#stepper .st').forEach((b, j) => {
+    const s = STEPS[j], page = $(s.id);
+    const done = !s.final && j !== cur && page && stepHasContent(page);
+    const w = j !== cur && warn.has(s.id);
+    b.classList.toggle('done', done && !w); b.classList.toggle('warn', w);
+    b.setAttribute('aria-label', 'שלב ' + (j + 1) + ': ' + s.title + (w ? ' (יש מה לבדוק)' : done ? ' (מולא)' : ''));
+  });
+}
+// בדיקת גיל: חודשים 0–11, שנים 0–18
+function ageProblem(){
+  const y = val('ageY'), m = val('ageM');
+  if (y !== '' && (isNaN(+y) || +y < 0 || +y > 18 || +y % 1)) return 'הגיל בשנים צריך להיות מספר שלם בין 0 ל-18.';
+  if (m !== '' && (isNaN(+m) || +m < 0 || +m > 11 || +m % 1)) return 'החודשים צריכים להיות מספר שלם בין 0 ל-11 (למשל 4 שנים ו-2 חודשים, לא 14 חודשים).';
+  return '';
 }
 
 
@@ -1169,7 +1270,8 @@ const dirty = {};   // שדות שנערכו ידנית או נוסחו ע"י Cl
 const aiDone = {};
 function renderOut(){
   $('out').innerHTML = FIELDS.map(f => '<div class="of" id="of_' + f[0] + '"><div class="t"><b>' + esc(f[1]) + '</b><span class="badge" id="bd_' + f[0] + '"></span>' +
-    '<button data-reset="' + f[0] + '" hidden>חזרה לאוטומטי</button><button data-copy="' + f[0] + '">העתקה</button></div><textarea id="o_' + f[0] + '"></textarea></div>').join('');
+    '<button data-reset="' + f[0] + '" hidden>חזרה לאוטומטי</button><button data-copy="' + f[0] + '">העתקה</button><button class="addtxt" data-addtxt="' + f[0] + '" type="button">+ הוספת טקסט</button></div>' +
+    '<textarea id="o_' + f[0] + '" aria-label="' + esc(f[1]) + '"></textarea></div>').join('');
   $('out').addEventListener('input', e => {
     if (e.target.id && e.target.id.startsWith('o_')){ const k = e.target.id.slice(2); dirty[k] = true; aiDone[k] = false; markField(k); if (polishUndo) delete polishUndo[k]; saveSessionSoon(); }
   });
@@ -1177,6 +1279,8 @@ function renderOut(){
     const c = e.target.getAttribute('data-copy'), r = e.target.getAttribute('data-reset');
     if (c) copyText($('o_' + c).value, 'השדה הועתק');
     if (r){ dirty[r] = false; aiDone[r] = false; update(); }
+    const a = e.target.getAttribute('data-addtxt');
+    if (a){ $('of_' + a).classList.add('open'); $('o_' + a).focus(); }
   });
 }
 function markField(k){
@@ -1399,6 +1503,7 @@ function hasContent(){
 function restoreState(st){
   document.querySelectorAll('[data-chips] input, #goalChips input').forEach(i => i.checked = false);
   document.querySelectorAll('.ctl.filled, .preset.on').forEach(c => c.classList.remove('filled', 'on'));
+  presetActive = null; if ($('presetMsg')) $('presetMsg').innerHTML = '';
   document.querySelectorAll('header input[id], #pages input[id], #pages select[id], #pages textarea[id]').forEach(el => {
     if (DRAFT_SKIP.includes(el.id) || el.id.startsWith('o_') || el.type === 'file' || el.type === 'checkbox') return;
     el.value = el.tagName === 'SELECT' ? (el.options[0] ? el.options[0].value : '') : '';
@@ -1440,9 +1545,9 @@ function restoreSession(){
 let resetUndo = null;
 function resetForm(){
   if (!hasContent()){ flash('הטופס כבר ריק'); return; }
-  resetUndo = {st: collectState(), cloud: cloudCur};
+  resetUndo = {st: collectState(), cloud: cloudCur, saved: cloudSaved};
   restoreState({});
-  cloudCur = null; polishUndo = null;
+  setCloudCur(null); polishUndo = null;
   ['imPaste', 'imExtra', 'imFiles'].forEach(id => { if ($(id)) $(id).value = ''; });
   importRaw = ''; importRes = null; importSources = [];
   $('imPreview').innerHTML = '<span class="msg">התצוגה תופיע כאן אחרי הקריאה.</span>'; $('imInfo').innerHTML = ''; $('imStatus').innerHTML = ''; $('imErr').innerHTML = '';
@@ -1452,7 +1557,7 @@ function resetForm(){
 }
 function undoReset(){
   if (!resetUndo) return;
-  restoreState(resetUndo.st); cloudCur = resetUndo.cloud; resetUndo = null;
+  restoreState(resetUndo.st); setCloudCur(resetUndo.cloud, resetUndo.saved); resetUndo = null;
   flash('הטופס שוחזר');
 }
 async function encryptJson(obj, pass){
@@ -1537,7 +1642,7 @@ async function draftAction(act){
     const note = st._passNote; delete st._passNote; delete st._pass;
     try { restoreState(st); }
     catch (e){ btn.disabled = false; return msg('הסיסמה נכונה, אבל טעינת הטיוטה לטופס נכשלה: ' + e.message); }
-    cloudCur = null;
+    setCloudCur(null);
     closeModal(); draftFileText = null; flash(note ? 'הטיוטה נפתחה (' + note + ')' : 'הטיוטה נפתחה');
   }
 }
@@ -1554,6 +1659,57 @@ let gTok = null;      // {token, exp, email}
 let gClient = null, gWait = null;
 let gAesKey = null;
 let cloudCur = null;  // {id, name} של הטיוטה שנפתחה מהענן, לעדכון באותו קובץ
+let cloudSaved = null;   // {at, sig}: מתי נשמרה בענן ואיך נראה הטופס באותו רגע
+const stateSig = () => JSON.stringify(collectState());
+function setCloudCur(c, saved){ cloudCur = c; cloudSaved = c ? (saved || {at: Date.now(), sig: stateSig()}) : null; cloudInfo(); }
+// "נשמר בענן 14:32" או "שינויים שלא נשמרו בענן", ליד שם המטופל
+function cloudInfo(){
+  const el = $('cloudInfo'); if (!el) return;
+  if (!cloudCur || !cloudSaved){ el.hidden = true; return; }
+  const dirty = stateSig() !== cloudSaved.sig, d = new Date(cloudSaved.at), pad = n => String(n).padStart(2, '0');
+  el.hidden = false; el.classList.toggle('dirty', dirty);
+  el.textContent = dirty ? 'יש שינויים שלא נשמרו בענן (Ctrl+S)' : 'נשמר בענן ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  el.title = draftLabel(cloudCur.name);
+}
+// שמירה מהירה לטיוטה הפתוחה בענן (Ctrl+S או מהחלון)
+function cloudQuickSave(){
+  if (!cloudCur) return cloudSave();
+  if (cloudNotReady()) return;
+  gSignIn().then(async () => {
+    flash('שומר בענן...');
+    try { await gUpdate(cloudCur.id, await gEncrypt(collectState())); }
+    catch(e){ return flash(e.show ? e.message : 'השמירה נכשלה: ' + e.message); }
+    setCloudCur(cloudCur); flash('הטיוטה "' + draftLabel(cloudCur.name) + '" עודכנה בענן'); syncPhrases();
+  }, e => flash(e.message));
+}
+
+// ---- הניסוחים שלי בענן: קובץ מוצפן אחד בתיקייה של הטופס, ממוזג עם מה שבדפדפן ----
+const G_PHRASE_FILE = 'ot-form-phrases.json';
+const PHRASE_DEL_STORE = 'ot_form_phrases_del_v1';   // מפתחות של ניסוחים שנמחקו, כדי שלא יחזרו מהענן
+function loadDel(){ try { return JSON.parse(localStorage.getItem(PHRASE_DEL_STORE)) || []; } catch(e){ return []; } }
+function saveDel(d){ try { localStorage.setItem(PHRASE_DEL_STORE, JSON.stringify(d)); } catch(e){} }
+function mergePhrases(a, b, del){
+  const out = {};
+  [a, b].forEach(src => Object.keys(src || {}).forEach(g => (src[g] || []).forEach(o => {
+    if (del.includes(o[0])) return;
+    out[g] = out[g] || []; if (!out[g].some(x => x[0] === o[0])) out[g].push(o);
+  })));
+  return out;
+}
+async function syncPhrases(files){
+  try {
+    files = files || await gList();
+    const f = files.find(x => x.name === G_PHRASE_FILE);
+    const remote = f ? await gDecrypt(await gRead(f.id)) : {p: {}, d: []};
+    const del = [...new Set(loadDel().concat(remote.d || []))];
+    const merged = mergePhrases(loadPhrases(), remote.p, del);
+    savePhrases(merged); saveDel(del); refreshPhraseChips(merged);
+    if (f && JSON.stringify({p: merged, d: del}) === JSON.stringify({p: remote.p, d: remote.d})) return;
+    const data = await gEncrypt({p: merged, d: del});
+    if (f) await gUpdate(f.id, data); else await gCreate(G_PHRASE_FILE, data);
+  } catch(e){}   // סנכרון ברקע: כשל לא מפריע לעבודה
+}
+const cloudSignedIn = () => !!(gTok && gTok.exp > Date.now() + 60000);
 function gLoad(){
   if (!GOOGLE_CLIENT_ID || window.google && google.accounts || gLoad.s) return;
   const sc = gLoad.s = document.createElement('script');
@@ -1659,7 +1815,8 @@ async function cloudSaveGo(){
     if (upd) await gUpdate(cloudCur.id, data);
     else { const f = await gCreate(label + '.otdraft', data); cloudCur = {id: f.id, name: f.name}; }
   } catch(e){ cBusy(false); return cMsg(e.show ? e.message : 'השמירה נכשלה: ' + e.message); }
-  closeModal(); flash('הטיוטה נשמרה בענן');
+  setCloudCur(cloudCur);
+  closeModal(); flash('הטיוטה נשמרה בענן'); syncPhrases();
 }
 
 function cloudOpen(){ cloudGo(cloudList); }
@@ -1668,7 +1825,7 @@ async function cloudList(){
     '<div class="mrow"><button class="btn" data-c="close">סגירה</button><button class="btn" data-c="signout">התנתקות</button></div><div id="dMsg"></div>');
   fillAccount();
   let items;
-  try { items = (await gList()).filter(f => f.name.endsWith('.otdraft')); }
+  try { const all = await gList(); items = all.filter(f => f.name.endsWith('.otdraft')); syncPhrases(all); }
   catch(e){ if ($('cList')) $('cList').innerHTML = ''; return cMsg(e.message); }
   if (!$('cList')) return;
   if (!items.length){ $('cList').innerHTML = '<p>אין עדיין טיוטות בענן. שומרים טיוטה בכפתור "שמירה בענן".</p>'; return; }
@@ -1683,7 +1840,7 @@ async function cloudPick(id, name){
   catch(e){ cBusy(false); return cMsg(e.show ? e.message : 'הפתיחה נכשלה: ' + e.message); }
   try { restoreState(st); }
   catch(e){ cBusy(false); return cMsg('טעינת הטיוטה לטופס נכשלה: ' + e.message); }
-  cloudCur = {id, name};
+  setCloudCur({id, name});
   closeModal(); flash('הטיוטה "' + draftLabel(name) + '" נפתחה');
 }
 async function cloudDel(id, name){
@@ -1691,7 +1848,7 @@ async function cloudDel(id, name){
   cBusy(true);
   try { await gApi(G_FILES + '/' + id, {method: 'DELETE'}); }
   catch(e){ cBusy(false); return cMsg(e.message); }
-  if (cloudCur && cloudCur.id === id) cloudCur = null;
+  if (cloudCur && cloudCur.id === id) setCloudCur(null);
   flash('הטיוטה נמחקה'); cloudList();
 }
 function cloudAction(a, el){
@@ -1701,7 +1858,7 @@ function cloudAction(a, el){
   else if (a === 'del') cloudDel(el.getAttribute('data-id'), el.getAttribute('data-n'));
   else if (a === 'signout'){
     if (gTok && window.google) try { google.accounts.oauth2.revoke(gTok.token, () => {}); } catch(e){}
-    gTok = null; gAesKey = null; cloudCur = null; closeModal(); flash('התנתקת מחשבון Google');
+    gTok = null; gAesKey = null; setCloudCur(null); closeModal(); flash('התנתקת מחשבון Google');
   }
 }
 
@@ -2141,6 +2298,8 @@ function wPara(text, o){
 }
 function buildDocx(){
   const parts = [];
+  const me = loadMe();
+  if (me.inst) parts.push(wPara(me.inst, {sz:22, center:true, after:60}));
   parts.push(wPara('דוח סיכום אבחון - ריפוי בעיסוק', {sz:32, bold:true, center:true, after:120}));
   const meta = [];
   if (val('name')) meta.push('שם: ' + val('name'));
@@ -2153,6 +2312,11 @@ function buildDocx(){
     parts.push(wPara(f[1], {sz:26, bold:true, before:200, after:80, keep:true}));
     v.split('\n').forEach(line => { if (line.trim()) parts.push(wPara(line.trim(), {sz:24, bold:/^מטרה \d+:$/.test(line.trim())})); });
   });
+  if (me.name || me.role){
+    parts.push(wPara(' ', {after:240}));
+    parts.push(wPara([me.name, me.role].filter(Boolean).join(', '), {sz:24, bold:true, after:0, keep:true}));
+    parts.push(wPara('חתימה: ____________________', {sz:24, before:120}));
+  }
   const doc = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' + parts.join('') +
     '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="709" w:footer="709" w:gutter="0"/><w:bidi/></w:sectPr></w:body></w:document>';
   const ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>';
@@ -2243,7 +2407,7 @@ function openAddPhrase(id){
     '<label class="lbl" for="pPhrase">הניסוח שייכנס לדוח</label><textarea id="pPhrase" style="min-height:70px"></textarea>' +
     '<p class="hint">הניסוח משתלב במשפט כמו שאר הניסוחים בקבוצה' + (ex ? ', למשל: "' + esc(ex[2] || ex[1]) + '"' : '') + '. ' +
     'למילים שתלויות במגדר כותבים {זכר|נקבה}, למשל {מתקשה|מתקשה} או {ילד|ילדה}. במקום השם כותבים [שם]. ' +
-    'הניסוחים נשמרים בדפדפן הזה בלבד.</p>' +
+    'הניסוחים נשמרים בדפדפן, ואחרי כניסה לענן גם בחשבון Google, כך שהם עוברים בין מכשירים.</p>' +
     '<div class="mrow"><button class="btn primary" data-p="add">הוספה</button><button class="btn" data-p="close">ביטול</button></div><div id="dMsg"></div>');
 }
 function addPhrase(){
@@ -2260,6 +2424,7 @@ function addPhrase(){
   box.querySelector('.addph').insertAdjacentHTML('beforebegin', chipHtml(o));
   const inp = box.querySelector('input[value="' + CSS.escape(key) + '"]'); inp.checked = true;
   closeModal(); update(); inp.focus(); flash('הניסוח נוסף ונבחר');
+  if (cloudSignedIn()) syncPhrases();
 }
 function openMyPhrases(){
   const mine = loadPhrases(), rows = [];
@@ -2273,20 +2438,50 @@ function openMyPhrases(){
     '<p>עדיין אין ניסוחים אישיים. מוסיפים אותם בכפתור "+ ניסוח משלי" שבסוף כל קבוצת בחירה בטופס.</p>') +
     '<div class="mrow"><button class="btn" data-p="close">סגירה</button></div>');
 }
+// מעדכן את הצ'יפים האישיים בטופס לפי רשימת ניסוחים (אחרי סנכרון מהענן)
+function refreshPhraseChips(mine){
+  SECTIONS.forEach(sec => sec.cards.forEach(c => { const walk = it => {
+    if (it.type === 'row') return it.items.forEach(walk);
+    if (it.type !== 'chips' || NO_CUSTOM.includes(it.id)) return;
+    const want = mine[it.id] || [], box = document.querySelector('[data-chips="' + it.id + '"]'); if (!box) return;
+    it.opts.filter(o => o[3] && !want.some(w => w[0] === o[0])).forEach(o => { const i = chipInput(it.id, o[0]); if (i) i.closest('label').remove(); delete OPT[it.id][o[0]]; });
+    it.opts = it.opts.filter(o => !o[3] || want.some(w => w[0] === o[0]));
+    want.filter(w => !it.opts.some(o => o[0] === w[0])).forEach(w => {
+      const o = [w[0], w[1], w[2], true]; it.opts.push(o); OPT[it.id][w[0]] = {label: w[1], phrase: w[2]};
+      box.querySelector('.addph').insertAdjacentHTML('beforebegin', chipHtml(o));
+    });
+  }; c.items.forEach(walk); }));
+  update();
+}
 function delPhrase(id, key){
   const mine = loadPhrases();
   const o = (mine[id] || []).find(x => x[0] === key); if (!o) return;
   if (!confirm('למחוק את הניסוח "' + o[1] + '"?')) return;
   mine[id] = mine[id].filter(x => x[0] !== key); if (!mine[id].length) delete mine[id];
-  savePhrases(mine);
+  savePhrases(mine); saveDel(loadDel().concat(key)); if (cloudSignedIn()) syncPhrases();
   const it = chipItem(id); if (it) it.opts = it.opts.filter(x => x[0] !== key);
   if (OPT[id]) delete OPT[id][key];
   const inp = document.querySelector('[data-chips="' + id + '"] input[value="' + CSS.escape(key) + '"]'); if (inp) inp.closest('label').remove();
   update(); openMyPhrases();
 }
+// ---- פרטי המאבחנת: נשמרים בדפדפן ונכנסים לכותרת ולחתימה בקובץ ה-Word ----
+const ME_STORE = 'ot_form_me_v1';
+function loadMe(){ try { return JSON.parse(localStorage.getItem(ME_STORE)) || {}; } catch(e){ return {}; } }
+function openMe(){
+  const me = loadMe(), f = (id, t, ph) => '<label class="lbl" for="' + id + '">' + t + '</label><input type="text" id="' + id + '" value="' + esc(me[id.slice(2)] || '') + '" placeholder="' + ph + '">';
+  openModal('<h3>פרטי המאבחנת ל-Word</h3><p class="hint">נשמרים בדפדפן הזה ומופיעים בכל דוח שמייצאים: שם המכון בכותרת, ושם ותפקיד בשורת החתימה.</p>' +
+    f('meinst', 'שם המכון / היחידה', 'למשל: המכון להתפתחות הילד') + f('mename', 'שם המאבחנת', '') + f('merole', 'תפקיד', 'למשל: מרפאה בעיסוק') +
+    '<div class="mrow"><button class="btn primary" data-p="mesave">שמירה</button><button class="btn" data-p="close">ביטול</button></div>');
+}
+function saveMe(){
+  const me = {inst: $('meinst').value.trim(), name: $('mename').value.trim(), role: $('merole').value.trim()};
+  try { localStorage.setItem(ME_STORE, JSON.stringify(me)); } catch(e){ return flash('הדפדפן לא מאפשר שמירה'); }
+  closeModal(); flash('הפרטים נשמרו ויופיעו בקובץ ה-Word');
+}
 function phraseAction(a, el){
   if (a === 'close') closeModal();
   else if (a === 'add') addPhrase();
+  else if (a === 'mesave') saveMe();
   else if (a === 'del') delPhrase(el.getAttribute('data-g'), el.getAttribute('data-pk'));
 }
 
@@ -2333,6 +2528,11 @@ $('saveDraft').addEventListener('click', saveDraft);
 $('openDraft').addEventListener('click', openDraftPick);
 $('draftFile').addEventListener('change', onDraftFile);
 $('cloudSave').addEventListener('click', cloudSave);
+// Ctrl+S: עדכון הטיוטה הפתוחה בענן, או חלון שמירה חדשה
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 's' && e.code !== 'KeyS') return;
+  e.preventDefault(); if ($('modalWrap').hidden) cloudQuickSave();
+});
 $('cloudOpen').addEventListener('click', cloudOpen);
 gLoad();
 $('modal').addEventListener('click', e => { const el = e.target.closest && e.target.closest('[data-c]'); if (el && !el.disabled) cloudAction(el.getAttribute('data-c'), el); });
@@ -2344,13 +2544,14 @@ $('modal').addEventListener('click', e => { const a = e.target.getAttribute && e
 $('modal').addEventListener('click', e => { const a = e.target.getAttribute && e.target.getAttribute('data-k'); if (a) keyAction(a); });
 $('modal').addEventListener('keydown', e => {
   if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
-  const b = $('modal').querySelector('[data-k="unlock"],[data-k="save"],[data-d="save"],[data-d="open"],[data-c="save"],[data-p="add"]'); if (b){ e.preventDefault(); b.click(); }
+  const b = $('modal').querySelector('[data-k="unlock"],[data-k="save"],[data-d="save"],[data-d="open"],[data-c="save"],[data-p="add"],[data-p="mesave"]'); if (b){ e.preventDefault(); b.click(); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modalWrap').hidden){ const no = $('modal').querySelector('[data-send="no"],[data-k="close"],[data-d="close"],[data-c="close"],[data-p="close"]'); if (no) no.click(); } });
 document.addEventListener('keydown', trapFocus);
 $('modal').addEventListener('click', e => { const el = e.target.closest && e.target.closest('[data-p]'); if (el) phraseAction(el.getAttribute('data-p'), el); });
 $('pages').addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-addph]'); if (b) openAddPhrase(b.getAttribute('data-addph')); });
 $('myPhrases').addEventListener('click', openMyPhrases);
+$('meBtn').addEventListener('click', openMe);
 // תפריט "עוד": נסגר אחרי בחירה, בלחיצה מחוץ לו וב-Escape
 $('more').addEventListener('click', e => { if (e.target.closest('.more-menu button')) $('more').open = false; });
 document.addEventListener('click', e => { if ($('more').open && !$('more').contains(e.target)) $('more').open = false; });
@@ -2379,6 +2580,10 @@ window.addEventListener('beforeunload', e => { saveSession(); if (hasContent()){
 window.addEventListener('pagehide', saveSession);
 document.addEventListener('visibilitychange', () => { if (document.hidden) saveSession(); });
 if (!restoreSession()) update();
+// עבודה בלי אינטרנט (רק כשהאתר מוגש מהרשת, לא כקובץ מקומי)
+if ('serviceWorker' in navigator && window.isSecureContext && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+function onlineState(){ $('offline').hidden = navigator.onLine; }
+window.addEventListener('online', onlineState); window.addEventListener('offline', onlineState); onlineState();
 </script>
 </body>
 </html>
