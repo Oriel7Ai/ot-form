@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- הדף יכול לתקשר רק עם השרת של Claude (api.anthropic.com), ורק בלחיצה על כפתור ואחרי אישור. שום כתובת אחרת לא נגישה ממנו. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src https://api.anthropic.com">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://accounts.google.com; script-src 'unsafe-inline' https://accounts.google.com/gsi/client; frame-src https://accounts.google.com; img-src data:; connect-src https://api.anthropic.com https://www.googleapis.com https://accounts.google.com">
 <title>טופס דוח אבחון</title>
 <style>
 :root{
@@ -101,6 +101,12 @@ input[data-auto="1"]{background:var(--accent-soft);color:var(--accent);font-weig
 .mic-wrap .mic:hover{color:var(--accent);border-color:var(--accent)}
 .mic-wrap .mic.on{background:#d93025;border-color:#d93025;color:#fff;animation:micp 1.2s ease-in-out infinite}
 @keyframes micp{0%,100%{box-shadow:0 0 0 0 rgba(217,48,37,.45)}50%{box-shadow:0 0 0 6px rgba(217,48,37,0)}}
+.clist{list-style:none;margin:10px 0 0;padding:0;max-height:50vh;overflow:auto}
+.clist li{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line);padding:6px 0}
+.clist li .cpick{flex:1;text-align:right;background:none;border:0;font:inherit;color:var(--ink);cursor:pointer;padding:6px 4px;border-radius:5px}
+.clist li .cpick:hover{background:var(--soft)}
+.clist li .cpick small{display:block;color:var(--muted);font-size:12px}
+.clist li .cdel{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:5px;padding:3px 9px;cursor:pointer}
 </style>
 </head>
 <body>
@@ -128,6 +134,8 @@ input[data-auto="1"]{background:var(--accent-soft);color:var(--accent);font-weig
       <button class="btn" id="saveDraft">שמירת טיוטה</button>
       <button class="btn" id="openDraft">פתיחת טיוטה</button>
       <input type="file" id="draftFile" accept=".otdraft,.json" hidden>
+      <button class="btn" id="cloudSave">שמירה בענן</button>
+      <button class="btn" id="cloudOpen">פתיחה מהענן</button>
       <button class="btn" id="resetAll">ניקוי הטופס</button>
       <span class="msg" id="msg"></span>
     </div>
@@ -994,6 +1002,7 @@ function passVariants(p){
 }
 async function decryptJson(text, pass){
   let f;
+  if (/^\s*</.test(text)) throw DraftError('נבחר קובץ הטופס עצמו ולא טיוטה. קובצי טיוטה נקראים "טיוטת_דוח_" ואחריו תאריך, עם הסיומת otdraft. בדרך כלל הם בתיקיית ההורדות.');
   try { f = JSON.parse(text); } catch(e){ throw DraftError('הקובץ אינו טיוטה של הטופס, או שהוא נשמר רק בחלקו (למשל הורדה שלא הסתיימה). כדאי לנסות עותק אחר של הקובץ.'); }
   if (!f || f.type !== 'ot-report-draft') throw DraftError('הקובץ אינו טיוטה של הטופס.');
   let salt, iv, ct;
@@ -1005,6 +1014,7 @@ async function decryptJson(text, pass){
     let pt; try { pt = await crypto.subtle.decrypt({name:'AES-GCM', iv}, k, ct); } catch(e){ continue; }
     const st = JSON.parse(new TextDecoder().decode(pt));
     if (v !== pass) st._passNote = 'הסיסמה התאימה אחרי תיקון של טעות הקלדה';
+    st._pass = v;
     return st;
   }
   throw DraftError('הסיסמה לא מתאימה לקובץ. הקובץ עצמו תקין. בדקו את שפת המקלדת, Caps Lock, ומספרים מול אותיות דומות (0 ו-O, 1 ו-l).');
@@ -1047,10 +1057,174 @@ async function draftAction(act){
     $('dMsg').innerHTML = '<p class="msg">בודק...</p>';
     try { st = await decryptJson(draftFileText, $('dPass').value); }
     catch (e){ btn.disabled = false; return msg(e.show ? e.message : 'לא הצלחתי לפתוח את הקובץ: ' + e.message); }
-    const note = st._passNote; delete st._passNote;
+    const note = st._passNote; delete st._passNote; delete st._pass;
     try { restoreState(st); }
     catch (e){ btn.disabled = false; return msg('הסיסמה נכונה, אבל טעינת הטיוטה לטופס נכשלה: ' + e.message); }
+    cloudCur = null;
     closeModal(); draftFileText = null; flash(note ? 'הטיוטה נפתחה (' + note + ')' : 'הטיוטה נפתחה');
+  }
+}
+
+// =====================================================================
+//  טיוטות בענן: כניסה עם Google, שמירה בתיקייה מוסתרת של הטופס ב-Google Drive
+//  (appDataFolder). מפתח ההצפנה נוצר פעם אחת ונשמר באותה תיקייה, כך שכל מי
+//  שנכנס עם החשבון פותח את הטיוטות בלי סיסמה, והקבצים עצמם נשמרים מוצפנים.
+// =====================================================================
+const GOOGLE_CLIENT_ID = '608248554207-1thlpu3vamm9ttg8ov5sjdkqp57vvd7r.apps.googleusercontent.com';   // מזהה הכניסה (OAuth Client ID) מ-Google Cloud Console
+const G_SCOPE = 'https://www.googleapis.com/auth/drive.appdata email';
+const G_KEY_FILE = 'ot-form-key.json';
+let gTok = null;      // {token, exp, email}
+let gClient = null, gWait = null;
+let gAesKey = null;
+let cloudCur = null;  // {id, name} של הטיוטה שנפתחה מהענן, לעדכון באותו קובץ
+function gLoad(){
+  if (!GOOGLE_CLIENT_ID || window.google && google.accounts || gLoad.s) return;
+  const sc = gLoad.s = document.createElement('script');
+  sc.src = 'https://accounts.google.com/gsi/client'; sc.async = true;
+  sc.onerror = () => { gLoad.s = null; };
+  document.head.appendChild(sc);
+}
+// חייב להיקרא ישירות מלחיצה, אחרת הדפדפן חוסם את חלון הכניסה
+function gSignIn(){
+  if (gTok && gTok.exp > Date.now() + 60000) return Promise.resolve(gTok.token);
+  if (!(window.google && google.accounts && google.accounts.oauth2)){ gLoad(); return Promise.reject(DraftError('רכיב הכניסה של Google עדיין נטען. נסו שוב בעוד רגע.')); }
+  if (!gClient) gClient = google.accounts.oauth2.initTokenClient({client_id: GOOGLE_CLIENT_ID, scope: G_SCOPE, callback: r => {
+    const w = gWait; gWait = null; if (!w) return;
+    if (r.error) return w.no(DraftError('הכניסה עם Google לא הושלמה.'));
+    if (!google.accounts.oauth2.hasGrantedAllScopes(r, 'https://www.googleapis.com/auth/drive.appdata')) return w.no(DraftError('כדי לשמור טיוטות צריך לאשר לטופס גישה לתיקייה שלו ב-Google Drive. נסו שוב וסמנו את האישור.'));
+    gTok = {token: r.access_token, exp: Date.now() + (r.expires_in - 60) * 1000, email: gTok && gTok.email};
+    w.ok(r.access_token);
+  }, error_callback: () => { const w = gWait; gWait = null; if (w) w.no(DraftError('חלון הכניסה של Google נסגר או נחסם. אם הדפדפן חוסם חלונות קופצים, צריך לאפשר אותם לאתר.')); }});
+  return new Promise((ok, no) => { gWait = {ok, no}; gClient.requestAccessToken({prompt: ''}); });
+}
+async function gApi(url, opt){
+  let r;
+  try { r = await fetch(url, Object.assign({cache: 'no-store'}, opt, {headers: Object.assign({Authorization: 'Bearer ' + gTok.token}, opt && opt.headers)})); }
+  catch(e){ throw DraftError('אין חיבור ל-Google Drive. בדקו את החיבור לאינטרנט.'); }
+  if (r.status === 401){ gTok = null; throw DraftError('פג תוקף הכניסה. לחצו שוב על הכפתור כדי להיכנס מחדש.'); }
+  if (r.status === 404) throw DraftError('הטיוטה כבר לא קיימת. אולי נמחקה ממכשיר אחר.');
+  if (!r.ok) throw DraftError('שגיאה בחיבור ל-Google Drive (' + r.status + '). נסו שוב.');
+  return r;
+}
+const G_FILES = 'https://www.googleapis.com/drive/v3/files', G_UP = 'https://www.googleapis.com/upload/drive/v3/files';
+async function gList(){
+  const q = new URLSearchParams({spaces: 'appDataFolder', fields: 'files(id,name,modifiedTime)', orderBy: 'modifiedTime desc', pageSize: '200'});
+  return (await (await gApi(G_FILES + '?' + q)).json()).files || [];
+}
+async function gCreate(name, text){
+  const b = 'otb' + Math.random().toString(36).slice(2);
+  const body = '--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify({name, parents: ['appDataFolder']}) +
+    '\r\n--' + b + '\r\nContent-Type: application/json\r\n\r\n' + text + '\r\n--' + b + '--';
+  return (await gApi(G_UP + '?uploadType=multipart&fields=id,name', {method: 'POST', headers: {'Content-Type': 'multipart/related; boundary=' + b}, body})).json();
+}
+const gUpdate = (id, text) => gApi(G_UP + '/' + id + '?uploadType=media', {method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: text});
+const gRead = async id => (await gApi(G_FILES + '/' + id + '?alt=media')).text();
+async function gEmail(){
+  if (gTok.email) return gTok.email;
+  try { gTok.email = (await (await gApi('https://www.googleapis.com/oauth2/v3/userinfo')).json()).email || ''; } catch(e){ gTok.email = ''; }
+  return gTok.email;
+}
+// מפתח ההצפנה של החשבון: נוצר בפעם הראשונה ונשמר בתיקייה המוסתרת
+async function gKey(files){
+  if (gAesKey) return gAesKey;
+  const f = (files || await gList()).find(x => x.name === G_KEY_FILE);
+  let raw;
+  if (f) raw = unb64(JSON.parse(await gRead(f.id)).k);
+  else { raw = crypto.getRandomValues(new Uint8Array(32)); await gCreate(G_KEY_FILE, JSON.stringify({v: 1, k: b64(raw)})); }
+  return gAesKey = await crypto.subtle.importKey('raw', raw, {name: 'AES-GCM'}, false, ['encrypt', 'decrypt']);
+}
+async function gEncrypt(obj){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, await gKey(), new TextEncoder().encode(JSON.stringify(obj))));
+  return JSON.stringify({type: 'ot-report-cloud', v: 1, iv: b64(iv), ct: b64(ct)});
+}
+async function gDecrypt(text){
+  let f; try { f = JSON.parse(text); } catch(e){ throw DraftError('הטיוטה בענן פגומה.'); }
+  try { return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: unb64(f.iv)}, await gKey(), unb64(f.ct)))); }
+  catch(e){ throw DraftError('לא הצלחתי לפענח את הטיוטה. ייתכן שקובץ המפתח בתיקייה נמחק או הוחלף.'); }
+}
+const draftLabel = n => n.replace(/\.otdraft$/, '');
+const fmtWhen = t => { const d = new Date(t), pad = n => String(n).padStart(2, '0'); return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+const cMsg = (t, ok) => { if ($('dMsg')) $('dMsg').innerHTML = '<div class="' + (ok ? 'okbox' : 'warnbox') + '" style="margin-top:10px">' + esc(t) + '</div>'; };
+const cBusy = on => $('modal').querySelectorAll('button').forEach(b => b.disabled = on);
+function cloudNotReady(){
+  if (GOOGLE_CLIENT_ID) return false;
+  openModal('<h3>טיוטות בענן</h3><p>השמירה בענן עדיין לא הוגדרה: חסר מזהה הכניסה של Google בקוד הטופס.</p><div class="mrow"><button class="btn" data-c="close">סגירה</button></div>');
+  return true;
+}
+// כניסה ישירות מהלחיצה, ואחריה פתיחת החלון המבוקש
+function cloudGo(then){
+  if (cloudNotReady()) return;
+  gSignIn().then(then, e => { openModal('<h3>טיוטות בענן</h3><div id="dMsg"></div><div class="mrow"><button class="btn" data-c="close">סגירה</button></div>'); cMsg(e.message); });
+}
+const accountLine = () => '<p class="hint" id="cAcct">' + (gTok && gTok.email ? 'מחובר כ-' + esc(gTok.email) : '') + '</p>';
+const fillAccount = () => gEmail().then(m => { if ($('cAcct') && m) $('cAcct').textContent = 'מחובר כ-' + m; });
+
+function cloudSave(){
+  if (!hasContent()){ flash('אין עדיין מה לשמור'); return; }
+  cloudGo(() => {
+    const cur = cloudCur;
+    openModal('<h3>שמירה בענן</h3>' + accountLine() +
+      (cur ? '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="cUpd" checked> עדכון הטיוטה הפתוחה: <b>' + esc(draftLabel(cur.name)) + '</b></label>' : '') +
+      '<div id="cNew"' + (cur ? ' hidden' : '') + '><label class="lbl">כינוי לטיוטה</label><input type="text" id="cLabel" placeholder="למשל: מספר תיק או ראשי תיבות">' +
+      '<p class="hint">הכינוי מופיע ברשימת הטיוטות, ולכן לא לכתוב בו את שם המטופל.</p></div>' +
+      '<div class="mrow"><button class="btn primary" data-c="save">שמירה</button><button class="btn" data-c="close">ביטול</button><button class="btn" data-c="signout">התנתקות</button></div><div id="dMsg"></div>');
+    fillAccount();
+  });
+}
+async function cloudSaveGo(){
+  const upd = $('cUpd') && $('cUpd').checked && cloudCur;
+  let label = upd ? '' : $('cLabel').value.replace(/[\\\/:*?"<>|]+/g, '').trim().slice(0, 60);
+  if (!upd && !label) return cMsg('צריך לתת לטיוטה כינוי, כדי לזהות אותה ברשימה.');
+  cBusy(true); $('dMsg').innerHTML = '<p class="msg">שומר...</p>';
+  try {
+    const data = await gEncrypt(collectState());
+    if (upd) await gUpdate(cloudCur.id, data);
+    else { const f = await gCreate(label + '.otdraft', data); cloudCur = {id: f.id, name: f.name}; }
+  } catch(e){ cBusy(false); return cMsg(e.show ? e.message : 'השמירה נכשלה: ' + e.message); }
+  closeModal(); flash('הטיוטה נשמרה בענן');
+}
+
+function cloudOpen(){ cloudGo(cloudList); }
+async function cloudList(){
+  openModal('<h3>פתיחה מהענן</h3>' + accountLine() + '<div id="cList"><p class="msg">טוען את רשימת הטיוטות...</p></div>' +
+    '<div class="mrow"><button class="btn" data-c="close">סגירה</button><button class="btn" data-c="signout">התנתקות</button></div><div id="dMsg"></div>');
+  fillAccount();
+  let items;
+  try { items = (await gList()).filter(f => f.name.endsWith('.otdraft')); }
+  catch(e){ if ($('cList')) $('cList').innerHTML = ''; return cMsg(e.message); }
+  if (!$('cList')) return;
+  if (!items.length){ $('cList').innerHTML = '<p>אין עדיין טיוטות בענן. שומרים טיוטה בכפתור "שמירה בענן".</p>'; return; }
+  $('cList').innerHTML = (hasContent() ? '<div class="warnbox">הטיוטה שתיפתח תחליף את מה שממולא כרגע בטופס.</div>' : '') +
+    '<ul class="clist">' + items.map(f => '<li><button class="cpick" data-c="pick" data-id="' + esc(f.id) + '" data-n="' + esc(f.name) + '">' + esc(draftLabel(f.name)) +
+      '<small>עודכנה ' + esc(fmtWhen(f.modifiedTime)) + '</small></button><button class="cdel" data-c="del" data-id="' + esc(f.id) + '" data-n="' + esc(f.name) + '">מחיקה</button></li>').join('') + '</ul>';
+}
+async function cloudPick(id, name){
+  cBusy(true); $('dMsg').innerHTML = '<p class="msg">פותח...</p>';
+  let st;
+  try { st = await gDecrypt(await gRead(id)); }
+  catch(e){ cBusy(false); return cMsg(e.show ? e.message : 'הפתיחה נכשלה: ' + e.message); }
+  try { restoreState(st); }
+  catch(e){ cBusy(false); return cMsg('טעינת הטיוטה לטופס נכשלה: ' + e.message); }
+  cloudCur = {id, name};
+  closeModal(); flash('הטיוטה "' + draftLabel(name) + '" נפתחה');
+}
+async function cloudDel(id, name){
+  if (!confirm('למחוק את הטיוטה "' + draftLabel(name) + '"? אי אפשר לבטל את המחיקה.')) return;
+  cBusy(true);
+  try { await gApi(G_FILES + '/' + id, {method: 'DELETE'}); }
+  catch(e){ cBusy(false); return cMsg(e.message); }
+  if (cloudCur && cloudCur.id === id) cloudCur = null;
+  flash('הטיוטה נמחקה'); cloudList();
+}
+function cloudAction(a, el){
+  if (a === 'close') closeModal();
+  else if (a === 'save') cloudSaveGo();
+  else if (a === 'pick') cloudPick(el.getAttribute('data-id'), el.getAttribute('data-n'));
+  else if (a === 'del') cloudDel(el.getAttribute('data-id'), el.getAttribute('data-n'));
+  else if (a === 'signout'){
+    if (gTok && window.google) try { google.accounts.oauth2.revoke(gTok.token, () => {}); } catch(e){}
+    gTok = null; gAesKey = null; cloudCur = null; closeModal(); flash('התנתקת מחשבון Google');
   }
 }
 
@@ -1592,13 +1766,21 @@ $('keyBtn').addEventListener('click', () => openKeyPanel());
 $('saveDraft').addEventListener('click', saveDraft);
 $('openDraft').addEventListener('click', openDraftPick);
 $('draftFile').addEventListener('change', onDraftFile);
+$('cloudSave').addEventListener('click', cloudSave);
+$('cloudOpen').addEventListener('click', cloudOpen);
+gLoad();
+$('modal').addEventListener('click', e => { const el = e.target.closest && e.target.closest('[data-c]'); if (el && !el.disabled) cloudAction(el.getAttribute('data-c'), el); });
+$('modal').addEventListener('change', e => {
+  if (e.target.id !== 'cUpd') return;
+  $('cNew').hidden = e.target.checked;
+});
 $('modal').addEventListener('click', e => { const a = e.target.getAttribute && e.target.getAttribute('data-d'); if (a) draftAction(a); });
 $('modal').addEventListener('click', e => { const a = e.target.getAttribute && e.target.getAttribute('data-k'); if (a) keyAction(a); });
 $('modal').addEventListener('keydown', e => {
   if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
-  const b = $('modal').querySelector('[data-k="unlock"],[data-k="save"],[data-d="save"],[data-d="open"]'); if (b){ e.preventDefault(); b.click(); }
+  const b = $('modal').querySelector('[data-k="unlock"],[data-k="save"],[data-d="save"],[data-d="open"],[data-c="save"]'); if (b){ e.preventDefault(); b.click(); }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modalWrap').hidden){ const no = $('modal').querySelector('[data-send="no"],[data-k="close"],[data-d="close"]'); if (no) no.click(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modalWrap').hidden){ const no = $('modal').querySelector('[data-send="no"],[data-k="close"],[data-d="close"],[data-c="close"]'); if (no) no.click(); } });
 keyStatus();
 $('exportWord').addEventListener('click', exportWord);
 $('imRead').addEventListener('click', importRead);
