@@ -1,0 +1,11 @@
+{
+  "name": "ot-form",
+  "private": true,
+  "description": "טופס דוח אבחון בריפוי בעיסוק",
+  "scripts": {
+    "test": "node tests/form.test.js"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
