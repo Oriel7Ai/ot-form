@@ -474,6 +474,41 @@ test('מטרות מדידות בבנק המטרות', async b => {
   assert.match(await out(page, 'goals'), /- תשתמש ביד הדומיננטית ב-4 מתוך 5 פעילויות ליד שולחן/);
 });
 
+test('שם משפחה: מוסר מכל טקסט שנשלח, ונעצר אם דלף', async b => {
+  const page = await fresh(b);
+  await page.fill('#name', 'נועה'); await page.fill('#surname', 'כהן');
+  assert.strictEqual(await page.evaluate(() => hideNames('נועה כהן ומשפחת כהן')), '[שם] [שם משפחה] ומשפחת [שם משפחה]');
+  // שם המשפחה נכנס לכותרת ה-Word (נשאר במחשב), לא לטקסט הדוח
+  const xml = await page.evaluate(async () => new TextDecoder().decode(await buildDocx().blob.arrayBuffer()));
+  assert.ok(xml.includes('שם: נועה כהן'));
+  assert.ok(!(await out(page, 'background')).includes('כהן'));
+});
+
+test('ייבוא: זיהוי שם משפחה אפשרי ושמות הורים, והסרה בלחיצה', async b => {
+  const page = await fresh(b);
+  await page.fill('#name', 'נועה');
+  await tab(page, 's_import');
+  await page.fill('#imPaste', 'נועה לוי הגיעה לאבחון עם אמה, רחל לוי. משפחת לוי גרה ליד הגן.');
+  await page.click('#imRead');
+  assert.match(await page.textContent('#imInfo'), /ייתכן שזה שם משפחה שלא הוסר: לוי/);
+  const flagged = await page.$$eval('#imPreview .w.fl', els => els.map(e => e.textContent));
+  assert.ok(flagged.includes('רחל') && flagged.includes('לוי'), flagged.join());
+  await page.click('#imInfo [data-sur="לוי"]');
+  assert.strictEqual(await page.$eval('#surname', e => e.value), 'לוי');
+  assert.strictEqual(await page.evaluate(() => importOutgoing()), '[שם] [שם משפחה] הגיעה לאבחון עם אמה, רחל [שם משפחה]. משפחת [שם משפחה] גרה ליד הגן.');
+});
+
+test('הפחתת תנועה: בלי אנימציות למי שביקש', async b => {
+  const page = await fresh(b, {reducedMotion: 'reduce'});
+  assert.strictEqual(await page.$eval('.page.on', e => getComputedStyle(e).animationName), 'none');
+  assert.strictEqual(await page.evaluate(() => getComputedStyle(document.documentElement).scrollBehavior), 'auto');
+});
+
+test('שליפה מקבצים כוללת את "השפעה על התפקוד"', async b => {
+  const page = await fresh(b);
+  assert.strictEqual(await page.evaluate(() => 'impact' in extractSchema() && /שדה impact/.test(EXTRACT_GUIDE)), true);
+});
+
 test('פענוח תשובת Claude בהזרמה, כולל מעבר למודל חלופי', async b => {
   const page = await fresh(b);
   const r = await page.evaluate(() => parseSSE([
