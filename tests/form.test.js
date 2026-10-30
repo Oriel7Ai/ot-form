@@ -360,6 +360,69 @@ test('חוזקות, תחומי עניין ופרשנות הפרופיל החוש
   assert.match(await out(page, 'f_fm'), /בטווח הנורמה לגילה, בגבול התחתון/);
 });
 
+test('סיכום: קודם הקשיים והציונים שמתחת לנורמה', async b => {
+  const page = await fresh(b);
+  await page.evaluate(() => {
+    $('gender').value = 'f';
+    ['manip','midNo','cutNo'].forEach(k => chipInput('fm', k).checked = true);
+    ['motiv','attShort','dist'].forEach(k => chipInput('beh', k).checked = true);
+    chipInput('cog', 'colors').checked = true;
+    $('beery_vmi_p').value = '12'; $('beery_vp_p').value = '45';
+    update();
+  });
+  const sum = await out(page, 'summary');
+  assert.match(sum, /הראתה טווחי קשב קצרים לגילה, מוסחות מגירויים פנימיים וחיצוניים\./);
+  assert.match(sum, /בתחום המוטוריקה העדינה- נצפה קושי בחציית קו האמצע\. קושי בגזירה/);
+  assert.match(sum, /באבחון BEERY התקבלו ציונים מתחת לטווח הנורמה לגילה: אינטגרציה ויזו-מוטורית \(באחוזון 12\)\./);
+  assert.ok(!/ביצוע מניפולציות/.test(sum));   // תפקוד תקין בתחום עם קשיים לא נכנס לסיכום
+  assert.match(sum, /בתחום התפיסה והחשיבה- משיימת צבעי יסוד\./);   // תחום בלי קשיים: מה שתקין
+});
+
+test('ניסוחים במגדר נקבה: תסכול ומקום בין האחים', async b => {
+  const page = await fresh(b);
+  await page.evaluate(() => { $('gender').value = 'f'; chipInput('parGen', 'frust').checked = true; $('sib').value = 'young'; update(); });
+  assert.match(await out(page, 'parents'), /מתוסכלת ומתעצבנת מהר כשלא מצליחה/);
+  assert.match(await out(page, 'family'), /הצעירה בין אחיה/);
+});
+
+test('מטרות מוצעות לפי Beery קואורדינציה ו-MAP, ובדיקת התאמה בין כלים לתוצאות', async b => {
+  const page = await fresh(b);
+  const r = await page.evaluate(() => {
+    $('beery_mc_p').value = '5'; $('map_nonverb_p').value = '3'; chipInput('tools', 'sp2').checked = true; update();
+    return {sugg: suggestGoals().map(x => x.k), checks: $('checks').textContent};
+  });
+  assert.ok(r.sugg.includes('graph') && r.sugg.includes('vis'), r.sugg.join());
+  assert.match(r.checks, /סומן פרופיל חושי \(SP2\) באמצעי ההערכה, אבל לא הוזנו תוצאות/);
+  assert.match(r.checks, /הוזנו תוצאות Beery, אבל Beery לא מסומן באמצעי ההערכה/);
+  assert.match(r.checks, /לא צוין איך הקשיים משפיעים על התפקוד/);
+});
+
+test('השפעה על התפקוד בסיכום, מסגרת זמן למטרות ותאריך האבחון', async b => {
+  const page = await fresh(b);
+  await page.fill('#adate', '2026-10-12');
+  await tab(page, 's_goals');
+  await page.fill('#impact', 'נמנעת מפעילויות יצירה בגן.');
+  await page.click('#goalChips label:has(input[value="graph"])');
+  await page.selectOption('#dur', '15 טיפולים');
+  assert.match(await out(page, 'summary'), /נמנעת מפעילויות יצירה בגן\./);
+  assert.match(await out(page, 'goals'), /^מטרה 1 \(בתום 15 טיפולים\):/);
+  const xml = await page.evaluate(async () => new TextDecoder().decode(await buildDocx().blob.arrayBuffer()));
+  assert.ok(xml.includes('תאריך האבחון: 12/10/2026'));
+});
+
+test('הדפסה / PDF: רק הדוח מוצג בהדפסה', async b => {
+  const page = await fresh(b);
+  await page.fill('#name', 'נועם');
+  await page.evaluate(() => { window.print = () => { window.__printed = true; }; });
+  await tab(page, 'st_review');
+  await page.click('#printReport');
+  assert.strictEqual(await page.evaluate(() => window.__printed), true);
+  await page.emulateMedia({media: 'print'});
+  assert.strictEqual(await page.isVisible('#printArea'), true);
+  assert.strictEqual(await page.isVisible('#pages'), false);
+  assert.match(await page.textContent('#printArea'), /דוח סיכום אבחון[\s\S]*נועם ילד מקסים/);
+});
+
 test('פענוח תשובת Claude בהזרמה, כולל מעבר למודל חלופי', async b => {
   const page = await fresh(b);
   const r = await page.evaluate(() => parseSSE([
