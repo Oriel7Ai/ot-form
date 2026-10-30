@@ -423,6 +423,57 @@ test('הדפסה / PDF: רק הדוח מוצג בהדפסה', async b => {
   assert.match(await page.textContent('#printArea'), /דוח סיכום אבחון[\s\S]*נועם ילד מקסים/);
 });
 
+test('ציפיות לפי גיל: הערה בכרטיס, בדיקה לפני ייצוא והצעת מטרה', async b => {
+  const page = await fresh(b);
+  await page.fill('#ageY', '6');
+  await tab(page, 's_find');
+  await chip(page, 'shapes', 'v'); await chip(page, 'shapes', 'h'); await chip(page, 'shapes', 'c');
+  await page.selectOption('#grip', 'fist');
+  const note = await page.textContent('#an_fm');
+  assert.match(note, /צלב \(מגיל 4\)/);
+  assert.match(note, /אחיזה אגרוף \(טריפוד מצופה מגיל 4 וחצי\)/);
+  assert.ok(!(await out(page, 'f_fm')).includes('מגיל'));   // ההערה לא נכתבת לדוח
+  assert.ok((await page.evaluate(() => suggestGoals().find(x => x.k === 'graph').why)).includes('מתחת למצופה לגיל'));
+  assert.match(await page.textContent('#checks'), /מוטוריקה עדינה מתחת למצופה לגיל/);
+  await page.evaluate(() => { $('ageY').value = '3'; update(); });
+  assert.strictEqual(await page.textContent('#an_fm'), '');   // בגיל 3 קו ועיגול מספיקים
+});
+
+test('אחרי ניסוח: בדיקה שכל מספר ותגית נשמרו', async b => {
+  const page = await fresh(b);
+  await page.evaluate(() => { apiKey = 'sk-ant-test'; $('beery_vmi_p').value = '12'; $('beery_vmi_s').value = '82'; update(); });
+  const reply = {f_fm: 'באבחון BEERY, בחלק הבודק אינטגרציה ויזו-מוטורית קיבל ציון נמוך מהנורמה.'};
+  await page.route('https://api.anthropic.com/v1/messages', r => r.fulfill({status: 200, contentType: 'text/event-stream', body:
+    'data: ' + JSON.stringify({type:'content_block_delta', index:0, delta:{type:'text_delta', text: JSON.stringify(reply)}}) + '\n\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n'}));
+  await tab(page, 'st_review');
+  await page.click('#polish'); await page.click('[data-send="yes"]');
+  await page.waitForSelector('#status .warnbox');
+  assert.match(await page.textContent('#status'), /ממצאי האבחון - מוטוריקה עדינה וגרפומוטוריקה: 12, 82/);
+  assert.match(await page.textContent('#bd_f_fm'), /חסרים פרטים/);
+  await page.click('#undoPolish');
+  assert.ok(!(await page.textContent('#bd_f_fm')).includes('חסרים'));
+});
+
+test('ההוראות ל-Claude: לא להשמיט קשיים ולא להמציא השפעה תפקודית', async b => {
+  const page = await fresh(b);
+  const g = await page.evaluate(() => STYLE_GUIDE);
+  assert.match(g, /אסור להשמיט קושי, ממצא חריג או ציון מתחת לנורמה/);
+  assert.match(g, /אל תכתוב השפעה תפקודית שלא כתובה בשדות/);
+  assert.ok(!/4-8 משפטים/.test(g));
+});
+
+test('מעבר שלב: הפוקוס עובר לכותרת השלב החדש', async b => {
+  const page = await fresh(b);
+  await page.focus('#st_start [data-go="1"]'); await page.keyboard.press('Enter');
+  assert.strictEqual(await page.evaluate(() => document.activeElement.matches('#s_import > h2')), true);
+});
+
+test('מטרות מדידות בבנק המטרות', async b => {
+  const page = await fresh(b);
+  await page.evaluate(() => { $('gender').value = 'f'; addGoal('graph'); update(); });
+  assert.match(await out(page, 'goals'), /- תשתמש ביד הדומיננטית ב-4 מתוך 5 פעילויות ליד שולחן/);
+});
+
 test('פענוח תשובת Claude בהזרמה, כולל מעבר למודל חלופי', async b => {
   const page = await fresh(b);
   const r = await page.evaluate(() => parseSSE([

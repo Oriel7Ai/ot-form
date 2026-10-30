@@ -60,6 +60,7 @@ body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 "Segoe UI",Ar
 .page{display:none}
 .page.on{display:block;animation:fade .25s ease}
 @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.page h2:focus{outline:none}
 .page h2{font-size:28px;line-height:1.25;margin:0 0 8px;color:var(--blue-dark)}
 .lead{font-size:17px;color:var(--muted);margin:0 0 28px;max-width:640px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px 28px;margin-bottom:20px;box-shadow:var(--shadow)}
@@ -123,6 +124,8 @@ button.btn:disabled{opacity:.55;cursor:wait}
 .peekbody{padding:0 18px 16px;white-space:pre-wrap;font-size:15px}
 .pk{margin-bottom:12px}.pk b{display:block;color:var(--muted);font-size:13px;margin-bottom:2px}
 .agebar{background:var(--soft);border-radius:10px;padding:10px 14px;font-size:14px;color:var(--muted);margin-bottom:16px}
+.agecheck:empty{display:none}
+.agecheck{background:var(--yellow-soft);border:1px solid var(--yellow-line);border-radius:12px;padding:10px 14px;margin-bottom:16px;font-size:15px}
 .suggbox{background:var(--yellow-soft);border:1px solid var(--yellow-line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
 .suggbox ul{margin:6px 0 10px;padding-inline-start:20px}
 .suggbox li{margin:2px 0}.suggbox li.in{color:var(--green-ink)}
@@ -144,6 +147,7 @@ button.btn:disabled{opacity:.55;cursor:wait}
 .of .t b{font-size:15px;flex:1;color:var(--blue-dark)}
 .of .badge{font-size:12px;padding:2px 10px;border-radius:999px;background:var(--soft);color:var(--muted)}
 .of .badge:empty{display:none}
+.of .badge.warn{background:var(--yellow-soft);color:var(--warn)}
 .of .badge.ai{background:var(--green-soft);color:var(--green-ink)}
 .of textarea{min-height:48px;background:var(--bg)}
 .of button{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--blue-dark);padding:4px 12px;border-radius:8px;cursor:pointer}
@@ -463,6 +467,7 @@ const SECTIONS = [
       ['colorOk','צביעה בתחום','{צובע|צובעת} בתחום תוך דיוק'],['colorNo','קושי בצביעה','קושי בצביעה בתחום'],
       ['hyper','גמישות יתר','גמישות יתר באצבעות'],['bilat','תיאום בילטראלי','תיאום מעט נמוך בין הידיים'],
       ['tower','בונה מגדל','{בונה|בונה} מגדל מקוביות'],['thread','משחיל/ה','{משחיל|משחילה} חרוזים על חוט']]},
+    {type:'agenote', id:'an_fm'},
     {type:'scores', id:'beery', label:'Beery VMI (אחוזון / ציון תקן)', rows:BEERY},
     {type:'textarea', id:'fmNote', label:'הערות'},
   ]},
@@ -499,6 +504,7 @@ const SECTIONS = [
       ['visOk','תפיסה חזותית תואמת גיל','תפקוד תואם גיל בפעילויות תפיסה חזותית'],
       ['concept','מושגי יסוד','קושי בתפיסת מושגי יסוד'],['attn','ייתכן רקע קשבי','ייתכן שהקשיים נובעים גם מרקע קשבי']]},
     {type:'chips', id:'blocks', label:'בנייה בקוביות - מחקה', opts:[['tower','מגדל'],['train','רכבת'],['bridge','גשר'],['chair','כסא'],['steps','מדרגות']]},
+    {type:'agenote', id:'an_cog'},
     {type:'scores', id:'map', label:'MAP (אחוזון)', rows:MAP_IDX, noStd:true},
     {type:'textarea', id:'cogNote', label:'הערות'},
   ]},
@@ -576,23 +582,27 @@ const IMPORT_HTML = `
   <div id="imStatus"></div>
 </div>`;
 
+// בנק המטרות. תתי-המטרות מנוסחות במונחים מדידים (כמה, כמה זמן, באיזו מידת עצמאות),
+// כדי שאפשר יהיה לבדוק בסוף הטיפול אם הושגו. המספרים הם ברירת מחדל: אפשר לערוך בדוח לכל ילד.
 const GOALS = [
  ['attn','השתתפות וקשב','[שם] {ישתתף ויתמיד|תשתתף ותתמיד} בפעילות תואמת גיל במשך 10 דק\', תוך הפחתת הצורך בתיווך בהדרגה',
    ['פעילות מטרימה להעלאת עוררות וקשב','התאמת הסביבה: הפחתת מסיחים, שימוש בסדר פעולות חזותי','מתן אסטרטגיות תואמות גיל לזיכרון עבודה']],
  ['base','תשתית מוטורית','[שם] {יחזק|תחזק} את התשתית המוטורית להשתתפות יעילה בפעילות ליד שולחן:',
-   ['{ישמור|תשמור} על יציבה בישיבה ליד שולחן','{יחצה|תחצה} את קו האמצע במרחב וליד שולחן','{ישתתף|תשתתף} בפעילויות יצירה תוך תיאום בילטראלי יעיל, דיוק מוטורי והפרדת תנועה']],
+   ['{ישמור|תשמור} על יציבה בישיבה ליד שולחן במשך 10 דקות, עם תזכורת אחת לכל היותר','{יחצה|תחצה} את קו האמצע במרחב וליד שולחן ב-4 מתוך 5 הזדמנויות','{ישתתף|תשתתף} בפעילויות יצירה ו{יבצע|תבצע} באופן עצמאי 80% משלבי הפעילות, תוך תיאום בילטראלי יעיל, דיוק מוטורי והפרדת תנועה']],
  ['graph','גרפומוטוריקה','[שם] {ישתתף|תשתתף} בפעילות גרפו-מוטורית ביעילות ובאופן עצמאי:',
-   ['{יבסס|תבסס} שימוש עקבי ביד הדומיננטית','{יאחז|תאחז} את כלי הכתיבה באחיזה יעילה תוך הפרדת תנועה ממפרקים פרוקסימאליים','{יצייר|תצייר} ציור חופשי בעל משמעות באיכות קו טובה','{ימלא|תמלא} שטחים בצביעה שיטתית']],
+   ['{ישתמש|תשתמש} ביד הדומיננטית ב-4 מתוך 5 פעילויות ליד שולחן','{יאחז|תאחז} את כלי הכתיבה באחיזה יעילה, תוך הפרדת תנועה ממפרקים פרוקסימאליים, ב-80% מזמן הפעילות','{יצייר|תצייר} ציור חופשי בעל משמעות, הכולל 4 פרטים לפחות, באיכות קו טובה','{ימלא|תמלא} שטח בצביעה שיטתית, עם חריגה של חצי ס"מ לכל היותר מהקו']],
  ['vis','תפיסה חזותית','[שם] {ישתתף|תשתתף} במשחקים ובפעילויות ליד שולחן הדורשים תפקודי תפיסה חזותית בהתאם {לגילו|לגילה}:',
-   ['{ירכיב|תרכיב} פאזל 9 חלקים באופן עצמאי תוך שימוש באסטרטגיה יעילה','{יעתיק|תעתיק} דגם פשוט ממוחש למוחש','{יזהה|תזהה} דומה ושונה']],
+   ['{ירכיב|תרכיב} פאזל 9 חלקים באופן עצמאי בתוך 5 דקות, תוך שימוש באסטרטגיה יעילה','{יעתיק|תעתיק} דגם פשוט של 4 קוביות ממוחש למוחש','{יזהה|תזהה} דומה ושונה ב-4 מתוך 5 ניסיונות']],
  ['play','משחק','[שם] {ישתתף|תשתתף} במגוון משחקים תואמי גיל במסגרת החינוכית ובבית:',
-   ['פיתוח תחומי עניין ומשחק, הדרכת הורים להבניית סדר יום עם זמנים למשחק הדדי משותף, משחקי דמיון ומשחקים מובנים','{ירחיב|תרחיב} את תחום המשחק למשחק סימבולי פשוט עם רצף של 2-3 שלבים','{ישחק|תשחק} במשחקים הדורשים תיאום בילטראלי ומיומנויות כף יד עדינות תוך פתרון בעיות וחקירה']],
+   ['פיתוח תחומי עניין ומשחק, הדרכת הורים להבניית סדר יום עם זמנים למשחק הדדי משותף, משחקי דמיון ומשחקים מובנים','{ירחיב|תרחיב} את תחום המשחק למשחק סימבולי פשוט עם רצף של 2-3 שלבים, ב-3 הזדמנויות שונות','{ישחק|תשחק} במשחקים הדורשים תיאום בילטראלי ומיומנויות כף יד עדינות, תוך פתרון בעיות וחקירה, במשך 5 דקות לפחות']],
  ['inter','אינטראקציה (פעוטות)','יצירת קשר והרחבת אינטראקציה משותפת והדדיות:',
-   ['הרחבת מגוון הכוונות התקשורתיות והאמצעים להבעה באופן בלתי מילולי ומילולי','הרחבת היענות לפניות והוראות','הרחבת משחק תואם גיל, בדגש על משחקי תפיסה, חשיבה ומיומנויות מוטוריות עדינות']],
- ['adl','עצמאות יומיומית','הגברת עצמאות במיומנויות יומיום, בדגש על לבוש ואכילה, בהתאם למצופה {בגילו|בגילה}',[]],
- ['plan','תכנון תנועה','שכלול מיומנויות תנועה- תכנון תנועה והפרדת תנועה, והתנסות במהלך מטלות תפקודיות',[]],
+   ['הרחבת מגוון הכוונות התקשורתיות והאמצעים להבעה באופן בלתי מילולי ומילולי','{יענה|תענה} לפנייה או להוראה פשוטה ב-3 מתוך 5 הזדמנויות','{ישתתף|תשתתף} במשחק משותף עם מבוגר במשך 3 דקות לפחות, בדגש על משחקי תפיסה, חשיבה ומיומנויות מוטוריות עדינות']],
+ ['adl','עצמאות יומיומית','הגברת עצמאות במיומנויות יומיום, בדגש על לבוש ואכילה, בהתאם למצופה {בגילו|בגילה}:',
+   ['{יתלבש|תתלבש} (חולצה ומכנסיים) באופן עצמאי, בתיווך מילולי בלבד','{יאכל|תאכל} באופן עצמאי בכפית ובמזלג במהלך ארוחה שלמה']],
+ ['plan','תכנון תנועה','שכלול מיומנויות תנועה- תכנון תנועה והפרדת תנועה, והתנסות במהלך מטלות תפקודיות:',
+   ['{יבצע|תבצע} מסלול תנועה של 4 שלבים לאחר הדגמה אחת','{יבצע|תבצע} רצף פעולות במטלה תפקודית (למשל הכנת תיק) באופן עצמאי']],
  ['write','כתיבה','שיפור איכות וקצב הכתיבה:',
-   ['הפחתת הלחץ בעת הכתיבה וחיזוק האצבעות','{יכתוב|תכתוב} תוך שמירה על חוקי הכתיבה (רווחים, שוליים ושורות)','מתן התאמות נדרשות במסגרת הלימודית לפי הצורך']],
+   ['הפחתת הלחץ בעת הכתיבה וחיזוק האצבעות','{יכתוב|תכתוב} תוך שמירה על חוקי הכתיבה (רווחים, שוליים ושורות) ב-80% מהשורות','{יעתיק|תעתיק} משפט מהלוח בקצב המצופה לכיתה','מתן התאמות נדרשות במסגרת הלימודית לפי הצורך']],
  ['guide','מפגשי הדרכה','1-2 מפגשי הדרכה בתחום ההתאמות הנדרשות, ומתן תרגול לבית',[]],
  ['sens','פרופיל חושי','מומלץ במהלך הטיפול להעמיק ולהתרשם מהפרופיל החושי ולהתאים את הטיפול ואת ההדרכה להורים בהתאם',[]],
  ['gmEval','הערכת מוטוריקה גסה','הערכת תחום המוטוריקה הגסה בתחילת הטיפול',[]],
@@ -665,6 +675,7 @@ function renderItem(it){
         '<div class="ctl"><label class="lbl" for="calcScore">ציון</label><input type="number" step="any" id="calcScore"></div></div>' +
         '<div class="calcres" id="calcRes"></div><button class="btn" id="calcCopy" type="button">העתקת המשפט</button>' +
         '<p class="hint">חישוב לפי התפלגות נורמלית. אם במדריך המבחן מופיע אחוזון אחר, הוא הקובע.</p></div>';
+    case 'agenote': return '<div class="agecheck" id="' + it.id + '" aria-live="polite"></div>';
     case 'goals':
       return '<div class="ctl"><span class="lbl" id="lb_goalChips">בנק מטרות (סדר הבחירה = סדר המטרות)</span><div id="goalSugg"></div><div class="chips" role="group" aria-labelledby="lb_goalChips" id="goalChips">' + GOALS.map(g => '<label><input type="checkbox" value="' + g[0] + '">' + esc(g[1]) + '</label>').join('') + '</div></div>';
   }
@@ -808,12 +819,12 @@ function renderForm(){
     else nav += '<div class="nextwrap">' + (s.id === 's_import' ? '<button type="button" class="btn ghost" data-go="' + (i + 1) + '">אין קבצים, לדלג</button>' : '') +
       '<button type="button" class="btn cta" data-go="' + (i + 1) + '">המשך: ' + esc(next.short === 'סיום' ? 'סקירה וייצוא' : next.title.replace(/^ממצאים: /, '')) + ' ←</button></div>';
     nav += '</div>';
-    return '<div class="page" id="' + s.id + '"><h2>' + esc(s.title) + '</h2><p class="lead">' + esc(s.lead) + '</p><div class="agenote" data-agenote="' + s.id + '"></div>' + body + peek + nav + '</div>';
+    return '<div class="page" id="' + s.id + '"><h2 tabindex="-1">' + esc(s.title) + '</h2><p class="lead">' + esc(s.lead) + '</p><div class="agenote" data-agenote="' + s.id + '"></div>' + body + peek + nav + '</div>';
   }).join('');
   $('presets').innerHTML = PRESETS.map(p => '<button type="button" class="preset" data-preset="' + p.id + '"><b>' + esc(p.title) + '</b><span>' + esc(p.desc) + '</span></button>').join('');
   document.addEventListener('click', e => {
-    const st = e.target.closest('[data-step]'); if (st) { goStep(+st.dataset.step); return; }
-    const go = e.target.closest('[data-go]'); if (go) { goStep(+go.dataset.go); return; }
+    const st = e.target.closest('[data-step]'); if (st) { goStep(+st.dataset.step, true); return; }
+    const go = e.target.closest('[data-go]'); if (go) { goStep(+go.dataset.go, true); return; }
     const nb = e.target.closest('[data-norm]'); if (nb) { applyNormal(nb.dataset.norm); return; }
     const pr = e.target.closest('[data-preset]'); if (pr) { applyPreset(pr.dataset.preset); return; }
     const sa = e.target.closest('[data-showall]'); if (sa) { showAll = !showAll; updateExtras(); return; }
@@ -828,13 +839,15 @@ function renderForm(){
   });
   goStep(0);
 }
-function goStep(i){
+// focus: מעבר שהמשתמשת ביקשה. הפוקוס עובר לכותרת השלב, כדי שקורא מסך יודיע עליו והמקלדת תמשיך משם
+function goStep(i, focus){
   cur = Math.max(0, Math.min(STEPS.length - 1, i));
   document.querySelectorAll('.page').forEach((p, j) => p.classList.toggle('on', j === cur));
   document.querySelectorAll('#stepper .st').forEach((b, j) => { b.classList.toggle('cur', j === cur); if (j === cur) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current'); });
   try { sessionStorage.setItem(SESSION_STORE + '_step', cur); } catch(e){}
   const cb = document.querySelector('#stepper .st.cur'); if (cb && cb.scrollIntoView) cb.scrollIntoView({block:'nearest', inline:'center'});
   window.scrollTo(0, 0);
+  if (focus){ const h = document.querySelector('#' + STEPS[cur].id + ' > h2'); if (h) h.focus({preventScroll: true}); }
   if ($('o_tools')) updateExtras();
   if (STEPS[cur].final && $('o_tools')) FIELDS.forEach(f => autoSize($('o_' + f[0])));
 }
@@ -911,6 +924,36 @@ function cardHasContent(el){
 const has = (id, ks) => chips(id).some(k => ks.includes(k));
 const label = (id, ks) => chips(id).filter(k => ks.includes(k)).map(k => OPT[id][k].label);
 function pctOf(id){ const v = val(id); return v === '' ? null : Number(v); }
+// ---- ציפיות לפי גיל ----
+// הגיל (בשנים) שבו רוב הילדים כבר מבצעים כל פריט. ערכים מקובלים בספרות ההתפתחותית (Beery, מבחני התפתחות);
+// המאבחנת יכולה לעדכן כאן. משמשים רק להערה ולהצעה, לא נכתבים לדוח.
+const AGE_NORMS = {
+  shapes: {v: 2, h: 2.5, c: 3, x: 4, sq: 4.5, diag: 5, tri: 5.5},
+  blocks: {tower: 2, train: 2.5, bridge: 3, steps: 4.5},
+  tripodBy: 4.5,       // אחיזת טריפוד
+  dominanceBy: 6,      // דומיננטיות ידנית מבוססת
+  meaningfulDrawBy: 4, // ציור בעל משמעות
+};
+const ageFmt = y => String(y).replace('.5', ' וחצי');
+// מה שסומן ועדיין מתחת למצופה לגיל. רק לפריטים שנבדקו (משהו בקבוצה סומן או נבחר).
+function ageGaps(){
+  const a = ageYears(), out = {fm: [], cog: []};
+  if (a === null) return out;
+  const missing = (id, norms) => { const got = chips(id); if (!got.length) return [];
+    return Object.entries(norms).filter(([k, y]) => y <= a && !got.includes(k)).map(([k, y]) => OPT[id][k].label + ' (מגיל ' + ageFmt(y) + ')'); };
+  const sh = missing('shapes', AGE_NORMS.shapes);
+  if (sh.length) out.fm.push('לא סומנו בהעתקה: ' + sh.join(', '));
+  if (a >= AGE_NORMS.tripodBy && ['fist','palmar','digital'].includes(val('grip'))) out.fm.push('אחיזה ' + OPT.grip[val('grip')].label + ' (טריפוד מצופה מגיל ' + ageFmt(AGE_NORMS.tripodBy) + ')');
+  if (a >= AGE_NORMS.dominanceBy && ['no','pref'].includes(val('dom'))) out.fm.push('דומיננטיות לא מבוססת (מצופה מגיל ' + AGE_NORMS.dominanceBy + ')');
+  if (a >= AGE_NORMS.meaningfulDrawBy && ['scrib','scribM','lines'].includes(val('draw'))) out.fm.push('שלב ציור: ' + OPT.draw[val('draw')].label + ' (ציור בעל משמעות מצופה מגיל ' + AGE_NORMS.meaningfulDrawBy + ')');
+  const bl = missing('blocks', AGE_NORMS.blocks);
+  if (bl.length) out.cog.push('לא סומנו בבנייה בקוביות: ' + bl.join(', '));
+  return out;
+}
+function renderAgeNotes(g){
+  [['an_fm', g.fm], ['an_cog', g.cog]].forEach(([id, items]) => { if ($(id)) $(id).innerHTML = items.length ?
+    '<b>מתחת למצופה לגיל ' + esc(ageNum()) + '?</b> ' + esc(items.join('; ')) + '. <span class="hint">לבדיקה שלך: ההערה לא נכתבת לדוח.</span>' : ''; });
+}
 function suggestGoals(){
   const s = [], add = (k, why) => { if (why.length && !s.some(x => x.k === k)) s.push({k, why}); };
   add('attn', label('beh', ['attShort','dist','move','interest','instrMed']));
@@ -923,9 +966,11 @@ function suggestGoals(){
   g.push(...label('fm', ['colorNo']));
   const vmi = pctOf('beery_vmi_p'); if (vmi !== null && vmi < 16) g.push('Beery VMI מתחת לנורמה');
   const mc = pctOf('beery_mc_p'); if (mc !== null && mc < 16) g.push('קואורדינציה מוטורית ב-Beery מתחת לנורמה');
+  const gap = ageGaps();
+  if (gap.fm.length) g.push('מתחת למצופה לגיל');
   add('graph', g);
   const v = label('cog', ['puzzNo','concept']); const vp = pctOf('beery_vp_p'); if (vp !== null && vp < 16) v.push('תפיסה חזותית ב-Beery מתחת לנורמה');
-  add('vis', v.concat(mapLow('nonverb')));
+  add('vis', v.concat(mapLow('nonverb'), gap.cog.length ? ['בנייה בקוביות מתחת למצופה לגיל'] : []));
   const pl = label('play', ['poor','build','flex']); const a = ageYears();
   if (['explore','func'].includes(val('playStage')) && (a === null || a >= 2.5)) pl.push('שלב משחק: ' + OPT.playStage[val('playStage')].label);
   add('play', pl);
@@ -968,6 +1013,9 @@ function runChecks(){
     if (tool && !data) bad('סומן ' + n + ' באמצעי ההערכה, אבל לא הוזנו תוצאות.', step);
     if (!tool && data) bad('הוזנו תוצאות ' + n + ', אבל ' + n + ' לא מסומן באמצעי ההערכה.', 's_bg');
   });
+  const gaps = ageGaps();
+  if (gaps.fm.length) bad('מוטוריקה עדינה מתחת למצופה לגיל: ' + gaps.fm.join('; ') + '. ודאי שזה מופיע בממצאים.', 's_find1');
+  if (gaps.cog.length) bad('תפיסה וחשיבה מתחת למצופה לגיל: ' + gaps.cog.join('; ') + '.', 's_find2');
   if (val('impact')) ok('צוינה השפעה על התפקוד וההשתתפות.');
   else if (suggestGoals().length) bad('לא צוין איך הקשיים משפיעים על התפקוד בבית ובמסגרת. לפי הנחיות החברה הישראלית לריפוי בעיסוק, זה חלק מסיכום האבחון.', 's_goals');
   if (chips('strengths').length || val('interests')) ok('צוינו חוזקות או תחומי עניין.');
@@ -1016,6 +1064,7 @@ function updateExtras(){
   const missing = sugg.filter(x => !goalOrder.includes(x.k));
   $('goalSugg').innerHTML = sugg.length ? '<div class="suggbox"><b>מוצע לפי הממצאים</b><ul>' + sugg.map(x => '<li' + (goalOrder.includes(x.k) ? ' class="in"' : '') + '><span class="gname">' + esc(goalTitle(x.k)) + '</span> <span class="why">(' + esc(x.why.join(', ')) + ')</span>' + (goalOrder.includes(x.k) ? ' ✓' : '') + '</li>').join('') + '</ul>' +
     (missing.length ? '<button type="button" class="btn small" id="addSugg">הוספת ' + missing.length + ' המוצעות</button>' : '') + '</div>' : '';
+  renderAgeNotes(ageGaps());
   const items = $('checks') ? runChecks() : [];
   markSteps(items);
 }
@@ -1414,20 +1463,22 @@ function renderOut(){
     '<button data-reset="' + f[0] + '" hidden>חזרה לאוטומטי</button><button data-copy="' + f[0] + '">העתקה</button><button class="addtxt" data-addtxt="' + f[0] + '" type="button">+ הוספת טקסט</button></div>' +
     '<textarea id="o_' + f[0] + '" aria-label="' + esc(f[1]) + '"></textarea></div>').join('');
   $('out').addEventListener('input', e => {
-    if (e.target.id && e.target.id.startsWith('o_')){ const k = e.target.id.slice(2); dirty[k] = true; aiDone[k] = false; markField(k); if (polishUndo) delete polishUndo[k]; saveSessionSoon(); }
+    if (e.target.id && e.target.id.startsWith('o_')){ const k = e.target.id.slice(2); dirty[k] = true; aiDone[k] = false; delete aiWarn[k]; markField(k); if (polishUndo) delete polishUndo[k]; saveSessionSoon(); }
   });
   $('out').addEventListener('click', e => {
     const c = e.target.getAttribute('data-copy'), r = e.target.getAttribute('data-reset');
     if (c) copyText($('o_' + c).value, 'השדה הועתק');
-    if (r){ dirty[r] = false; aiDone[r] = false; update(); }
+    if (r){ dirty[r] = false; aiDone[r] = false; delete aiWarn[r]; update(); }
     const a = e.target.getAttribute('data-addtxt');
     if (a){ $('of_' + a).classList.add('open'); $('o_' + a).focus(); }
   });
 }
 function markField(k){
   const bd = $('bd_' + k), btn = document.querySelector('[data-reset="' + k + '"]');
-  bd.textContent = aiDone[k] ? 'נוסח ע"י Claude' : (dirty[k] ? 'נערך ידנית' : '');
-  bd.className = 'badge' + (aiDone[k] ? ' ai' : '');
+  const w = aiDone[k] && aiWarn[k];
+  bd.textContent = aiDone[k] ? 'נוסח ע"י Claude' + (w ? ' · חסרים פרטים' : '') : (dirty[k] ? 'נערך ידנית' : '');
+  bd.className = 'badge' + (w ? ' warn' : aiDone[k] ? ' ai' : '');
+  bd.title = w ? 'חסרים בניסוח: ' + aiWarn[k].map(showNames).join(', ') : '';
   btn.hidden = !dirty[k];
 }
 function autoSize(el){ el.style.height = 'auto'; el.style.height = Math.min(Math.max(el.scrollHeight + 2, 44), 420) + 'px'; }
@@ -2023,8 +2074,9 @@ const STYLE_GUIDE = `אתה עוזר למרפאה בעיסוק במכון להת
 - רקע: נפתח במשפט "[שם] ילד מקסים בן 4.1. הגיע לאבחון בריפוי בעיסוק בהפניית ... בשל ...", ואחריו נתוני לידה, התפתחות ובריאות.
 - ממצאים: פסקה רציפה לכל תחום. אפשר להשתמש בתבנית "בתחום X- ..." כשמתאים.
 - Beery: "באבחון BEERY, בחלק הבודק אינטגרציה ויזו-מוטורית קיבל ציון באחוזון 30, בטווח הנורמה לגילו, מתחת לממוצע."
-- לפי הנחיות החברה הישראלית לריפוי בעיסוק: הממצאים מקושרים להשפעה שלהם על התפקוד וההשתתפות בבית ובמסגרת החינוכית, והסיכום כולל את החוזקות ואת תחומי העניין של הילד, אם צוינו.
-- סיכום: חוזר על משפט הפתיחה, משפט על ההתנהגות ושיתוף הפעולה באבחון, ואחריו תחום אחר תחום בתבנית "בתחום המוטורי- ...", "בתחום התפיסה והחשיבה- ...". 4-8 משפטים, בלי מידע שלא מופיע בממצאים.
+- לפי הנחיות החברה הישראלית לריפוי בעיסוק: כשבשדות יש מידע על השפעת הקשיים על התפקוד וההשתתפות בבית ובמסגרת החינוכית, קשר אליו את הממצאים. אל תכתוב השפעה תפקודית שלא כתובה בשדות. הסיכום כולל את החוזקות ואת תחומי העניין של הילד, אם צוינו.
+- סיכום: קיבלת טיוטת סיכום. שמור על המבנה שלה: משפט הפתיחה, משפט על ההתנהגות ושיתוף הפעולה באבחון, ואחריו תחום אחר תחום בתבנית "בתחום המוטורי- ...", "בתחום התפיסה והחשיבה- ...".
+- בסיכום אסור להשמיט קושי, ממצא חריג או ציון מתחת לנורמה שמופיעים בטיוטה. אפשר לקצר ולאחד רק תיאורים של תפקוד תקין. בלי מידע שלא מופיע בממצאים.
 
 החזר אך ורק אובייקט JSON תקין עם אותם מפתחות שקיבלת, בלי טקסט נוסף.`;
 
@@ -2049,22 +2101,33 @@ async function polish(){
     POLISH_KEYS.forEach(k => {
       if (typeof obj[k] === 'string' && obj[k].trim() && payload[k] !== undefined){
         before[k] = {t: $('o_' + k).value, dirty: !!dirty[k], ai: !!aiDone[k]};
+        const miss = polishMissing(payload[k], obj[k]); if (miss.length) aiWarn[k] = miss; else delete aiWarn[k];
         $('o_' + k).value = showNames(obj[k].trim()); dirty[k] = true; aiDone[k] = true; markField(k); autoSize($('o_' + k)); n++;
       }
     });
     polishUndo = n ? before : null;
+    const warned = Object.keys(aiWarn).filter(k => before[k]);
     $('status').innerHTML = '<div class="okbox">נוסחו ' + n + ' שדות. זו טיוטה: קראי ואשרי כל שדה לפני ההדבקה ב-Cliks.' +
-      (n ? ' <button class="linkbtn" id="undoPolish" type="button">ביטול הניסוח</button>' : '') + '</div>';
+      (n ? ' <button class="linkbtn" id="undoPolish" type="button">ביטול הניסוח</button>' : '') + '</div>' +
+      (warned.length ? '<div class="warnbox" role="alert"><b>בניסוח חסרים פרטים מהמקור. כדאי לבדוק:</b><ul style="margin:6px 0 0">' +
+        warned.map(k => '<li>' + esc(fieldTitle(k)) + ': ' + esc(aiWarn[k].map(showNames).join(', ')) + '</li>').join('') + '</ul></div>' : '');
     saveSession();
   } catch (err){
     $('status').innerHTML = '<div class="warnbox">הניסוח נכשל: ' + esc(err.message) + ' הטקסט האוטומטי נשאר כמו שהוא.</div>';
   } finally { btn.disabled = false; btn.textContent = 'ניסוח בעזרת Claude'; }
 }
 let polishUndo = null;   // {שדה: {t, dirty, ai}} מלפני הניסוח האחרון
+// בדיקה אחרי ניסוח: כל מספר וכל תגית ([שם], [תאריך]...) מהטקסט המקורי צריכים להופיע גם בטקסט המנוסח
+const aiWarn = {};   // {שדה: [מה שחסר]}
+function polishMissing(orig, polished){
+  const nums = t => new Set(t.match(/\d+(?:\.\d+)?/g) || []), tags = t => new Set(t.match(/\[[^\]\n]{1,24}\]/g) || []);
+  const pn = nums(polished), pt = tags(polished);
+  return [...nums(orig)].filter(x => !pn.has(x)).concat([...tags(orig)].filter(x => !pt.has(x)));
+}
 function undoPolish(){
   if (!polishUndo) return;
   Object.keys(polishUndo).forEach(k => {
-    const p = polishUndo[k]; dirty[k] = p.dirty; aiDone[k] = p.ai;
+    const p = polishUndo[k]; dirty[k] = p.dirty; aiDone[k] = p.ai; delete aiWarn[k];
     if (p.dirty) $('o_' + k).value = p.t;
   });
   polishUndo = null; update(); saveSession();

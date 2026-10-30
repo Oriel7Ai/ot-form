@@ -1,0 +1,22 @@
+# מריץ את בדיקות הטופס על כל PR ועל כל עדכון לענף הראשי.
+# אם בדיקה נכשלת, ה-PR מסומן באדום עוד לפני שהשינוי עולה לאתר.
+name: בדיקות
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
