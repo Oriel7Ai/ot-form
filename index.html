@@ -237,6 +237,12 @@ input[data-auto="1"]{background:var(--green-soft);color:var(--green-ink);font-we
 .clist li .cpick small{display:block;color:var(--muted);font-size:12px}
 .clist li .cdel{font:inherit;font-size:13px;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:5px;padding:3px 9px;cursor:pointer}
 
+/* מי שביקש במערכת "הפחתת תנועה": בלי אנימציות ובלי גלילה חלקה */
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+
 /* ---- הדפסה / PDF: רק הדוח עצמו ---- */
 #printArea{display:none}
 @media print{
@@ -720,6 +726,9 @@ const START_HTML = `
   <h3>פרטי המטופל/ת</h3>
   <div class="row">
     <div class="ctl"><label class="lbl" for="name">שם פרטי</label><input type="text" id="name" autocomplete="off"><p class="hint">נשאר במכשיר ולא נשלח לשום מקום.</p></div>
+    <div class="ctl"><label class="lbl" for="surname">שם משפחה</label><input type="text" id="surname" autocomplete="off"><p class="hint">לא נכנס לדוח. מוסר מכל טקסט שנשלח ל-Claude.</p></div>
+  </div>
+  <div class="row">
     <div class="ctl"><label class="lbl" for="gender">מגדר</label><select id="gender"><option value="m">בן</option><option value="f">בת</option></select></div>
   </div>
   <div class="row">
@@ -990,7 +999,7 @@ function OPT_SP2(k){ const l = SP2_LEVELS.find(x => x[0] === k); return l ? l[1]
 const goalTitle = k => (GOALS.find(g => g[0] === k) || [, k])[1];
 
 // ---- בדיקה לפני ייצוא ----
-const TAG_RE = /\[(שם|שם\d+|יישוב|הוסר|שם רופא|מקום|מסגרת\/מוסד|תאריך|טלפון|מספר מזהה|מייל|קופ"ח|כתובת)\]/;
+const TAG_RE = /\[(שם|שם\d+|שם משפחה|יישוב|הוסר|שם רופא|מקום|מסגרת\/מוסד|תאריך|טלפון|מספר מזהה|מייל|קופ"ח|כתובת)\]/;
 function stepIndex(id){ return STEPS.findIndex(s => s.id === id); }
 function runChecks(){
   const items = [];
@@ -1436,7 +1445,8 @@ B.famResp = () => val('famResp');
 // =====================================================================
 function nameList(){
   const arr = [val('name')].concat(val('names2').split(/[,\n]+/).map(s => s.trim()));
-  return arr.map((n, i) => ({name:n, token: i === 0 ? '[שם]' : '[שם' + (i+1) + ']'})).filter(x => x.name.length >= 2);
+  return arr.map((n, i) => ({name:n, token: i === 0 ? '[שם]' : '[שם' + (i+1) + ']'}))
+    .concat([{name: val('surname'), token: '[שם משפחה]'}]).filter(x => x.name.length >= 2);
 }
 function showNames(t){ nameList().forEach(x => { t = t.split(x.token).join(x.name); }); return t; }
 function escRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
@@ -2063,7 +2073,7 @@ const STYLE_GUIDE = `אתה עוזר למרפאה בעיסוק במכון להת
 כללי ברזל:
 1. אסור להוסיף ממצא, אבחנה, ציון או פרט שלא מופיע בשדות. אם שדה ריק, החזר אותו ריק.
 2. אסור לשנות ציונים, אחוזונים, זמנים או מספרים.
-3. תגיות כמו [שם], [שם2], [תאריך] הן פרטים שהוסרו. העתק אותן בדיוק כמו שהן, במקומות המתאימים.
+3. תגיות כמו [שם], [שם2], [שם משפחה], [תאריך] הן פרטים שהוסרו. העתק אותן בדיוק כמו שהן, במקומות המתאימים.
 4. שמור על המגדר שצוין לאורך כל הטקסט.
 5. אל תקבע אבחנה רפואית. תאר תפקוד.
 
@@ -2236,10 +2246,29 @@ function findFlags(seg){
   }
   var reN = /(?<!\d)\d{4,}(?!\d)/g;
   while ((m = reN.exec(seg))) out.push([m.index, m.index + m[0].length]);
+  // שמות של בני משפחה: "משפחת X", "אמה, X Y", "אביו - X"
+  var reF = /(?:משפחת|למשפחת|ממשפחת)\s+([א-ת][א-ת"'\-]*)/g;
+  while ((m = reF.exec(seg))){ var e = m.index + m[0].length; out.push([e - m[1].length, e]); }
+  var reP = /(?:^|[^א-ת])ו?(?:אמו|אמה|אביו|אביה|אמא|אבא|האם|האב)\s*[,\-–]\s*([א-ת][א-ת"'\-]*)(?:\s+([א-ת][א-ת"'\-]*))?/dg;
+  while ((m = reP.exec(seg))){ out.push(m.indices[1]); if (m[2]) out.push(m.indices[2]); }
   return out;
 }
+// שם משפחה אפשרי: אחרי "משפחת", או מילה שבאה מיד אחרי שם הילד/ה וחוזרת בטקסט לפחות 3 פעמים
+var SURNAME_STOP = ['הגיע','הגיעה','מגיע','מגיעה','מתקשה','מראה','הראה','הראתה','בן','בת','לומד','לומדת','משתף','משתפת','נמצא','נמצאת','שיתף','שיתפה','נהנה','נהנית','אוהב','אוהבת'];
+function surnameCandidates(text){
+  var c = {}, m, re;
+  re = /(?:משפחת|למשפחת|ממשפחת)\s+([א-ת][א-ת"'\-]*)/g;
+  while ((m = re.exec(text))) c[m[1]] = true;
+  re = /\[שם\]\s+([א-ת][א-ת"'\-]{1,})/g;
+  while ((m = re.exec(text))){
+    var w = m[1];
+    if (SURNAME_STOP.indexOf(w) < 0 && FLAG_STOP.indexOf(w) < 0 && (text.match(new RegExp('(?<![א-ת])' + esc(w) + '(?![א-ת])', 'g')) || []).length >= 3) c[w] = true;
+  }
+  return Object.keys(c);
+}
 
-return {deidentify: deidentify, toPlain: toPlain, findFlags: findFlags, normalize: normalize};
+return {deidentify: deidentify, toPlain: toPlain, findFlags: findFlags, normalize: normalize, surnameCandidates: surnameCandidates};
+
 })();
 
 let importRaw = '';      // הטקסט המקורי מהקבצים (נשאר בדף בלבד)
@@ -2326,7 +2355,7 @@ function importDeid(){
 }
 function list(v){ return v.split(/[\n,،]+/).map(s => s.trim()).filter(Boolean); }
 
-const TOKEN_RE = /(\[שם\d*\]|\[תאריך\]|\[טלפון\]|\[מספר מזהה\]|\[מייל\])/;
+const TOKEN_RE = /(\[שם\d*\]|\[שם משפחה\]|\[תאריך\]|\[טלפון\]|\[מספר מזהה\]|\[מייל\])/;
 function renderImportPreview(){
   const r = importRes;
   const parts = r.text.split(/([-])/);
@@ -2354,6 +2383,10 @@ function renderImportPreview(){
   $('imPreview').innerHTML = html;
   const removed = r.items.length + (r.text.match(new RegExp(TOKEN_RE.source, 'g')) || []).length;
   $('imInfo').innerHTML = '<span class="chip-s">נקראו: ' + esc(importSources.join(', ')) + '</span><span class="chip-s">הוסרו: ' + removed + '</span>' + (flags ? '<span class="chip-s fl">לבדיקה: ' + flags + '</span>' : '');
+  // הצעה: שם משפחה שזוהה בטקסט ועדיין לא הוסר
+  const sur = DEID.surnameCandidates(DEID.toPlain(r)).filter(w => w !== val('surname'));
+  if (sur.length) $('imInfo').innerHTML += '<div class="warnbox" style="margin-top:8px">ייתכן שזה שם משפחה שלא הוסר: ' +
+    sur.map(w => '<b>' + esc(w) + '</b> <button type="button" class="linkbtn" data-sur="' + esc(w) + '">הסרה</button>').join(' · ') + '</div>';
 }
 function importOutgoing(){ return importRes ? DEID.toPlain(importRes) : ''; }
 
@@ -2425,6 +2458,8 @@ function extractSchema(){
     });
   }
   SECTIONS.filter(s => EXTRACT_SECTIONS.includes(s.id)).forEach(s => s.cards.forEach(c => c.items.forEach(walk)));
+  // מתוך שלב המטרות רק "השפעה על התפקוד": דוחות ושאלונים מתארים אותה לעיתים קרובות
+  sc.impact = {type:'text', label:'השפעה של הקשיים על התפקוד וההשתתפות בבית ובמסגרת'};
   return sc;
 }
 const EXTRACT_GUIDE = `אתה עוזר למרפאה בעיסוק במכון להתפתחות הילד בישראל. קיבלת טקסט ממסמכים על ילד שמגיע לאבחון (שאלונים, דוחות קודמים, סיכומי שיחה), ורשימת שדות של טופס.
@@ -2434,9 +2469,10 @@ const EXTRACT_GUIDE = `אתה עוזר למרפאה בעיסוק במכון לה
 1. רק מידע שכתוב במפורש בטקסט. אסור להסיק, לנחש או להשלים. אם אין מידע לשדה, אל תכלול אותו.
 2. בשדה מסוג select: החזר מפתח אחד מתוך options. בשדה מסוג multi: מערך של מפתחות מתוך options. בשדה number: מספר בלבד.
 3. בשדה מסוג text: משפט או כמה משפטים קצרים בעברית, בגוף שלישי ובסגנון קליני. פרטים שאין להם אפשרות מתאימה ב-options נכנסים לשדות ההערות (bgNote, prevTx, famNote, parNote, schNote).
-4. תגיות כמו [שם], [שם2], [תאריך], [יישוב], [הוסר] הן פרטים שהוסרו. העתק אותן כמו שהן, ואל תנסה לשחזר אותן.
+4. תגיות כמו [שם], [שם2], [שם משפחה], [תאריך], [יישוב], [הוסר] הן פרטים שהוסרו. העתק אותן כמו שהן, ואל תנסה לשחזר אותן.
 5. שדה ref הוא הגורם שהפנה לאבחון הנוכחי. reasons הן סיבות ההפניה.
 6. מידע על אבחונים וטיפולים קודמים (פיזיותרפיה, קלינאית תקשורת, רופא התפתחותי) נכנס ל-prevTx בתמצית, כולל המלצות שניתנו.
+7. שדה impact: איך הקשיים משפיעים על היומיום בבית ובמסגרת (למשל לבוש, אכילה, השתתפות בגן), רק אם זה כתוב במפורש.
 
 החזר אך ורק אובייקט JSON תקין שהמפתחות שלו הם מזהי השדות, בלי טקסט נוסף.`;
 
@@ -2532,7 +2568,7 @@ function buildDocx(){
   return {blob: zipStore([{name:'[Content_Types].xml', data:ct}, {name:'_rels/.rels', data:rels}, {name:'word/document.xml', data:doc}]), count:n};
 }
 // אותו תוכן כמו בקובץ ה-Word, בעיצוב להדפסה. מ"שמירה כ-PDF" בחלון ההדפסה מתקבל קובץ PDF.
-function reportMeta(){ return [val('name') ? 'שם: ' + val('name') : '', ageNum() ? 'גיל: ' + ageNum() : '', reportDate()].filter(Boolean).join('   |   '); }
+function reportMeta(){ return [val('name') ? 'שם: ' + [val('name'), val('surname')].filter(Boolean).join(' ') : '', ageNum() ? 'גיל: ' + ageNum() : '', reportDate()].filter(Boolean).join('   |   '); }
 function printReport(){
   const fields = FIELDS.map(f => [f[1], $('o_' + f[0]).value.trim()]).filter(x => x[1]);
   if (!fields.length){ flash('אין עדיין תוכן להדפסה'); return; }
@@ -2783,6 +2819,13 @@ $('imRead').addEventListener('click', importRead);
 $('imHeads').addEventListener('click', fillByHeadings);
 $('imExtract').addEventListener('click', extractWithClaude);
 $('imExtra').addEventListener('change', importDeid);
+// "הסרה" של שם משפחה שזוהה: נכנס לשדה שם המשפחה (או לרשימת ההסרה אם השדה כבר מלא)
+$('imInfo').addEventListener('click', e => {
+  const w = e.target.getAttribute && e.target.getAttribute('data-sur'); if (!w) return;
+  if (!val('surname')) $('surname').value = w;
+  else { const cur = list(val('imExtra')); if (!cur.includes(w)) cur.push(w); $('imExtra').value = cur.join(', '); }
+  importDeid(); update(); flash('"' + w + '" יוסר מכל טקסט שנשלח');
+});
 $('imPreview').addEventListener('click', e => {
   const t = e.target; if (!t.classList || !t.classList.contains('w')) return;
   const w = t.getAttribute('data-w').replace(/['"\-]+$/, '');
