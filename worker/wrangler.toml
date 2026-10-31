@@ -1,0 +1,16 @@
+# הגדרות ה-Worker המתווך. הסודות (מפתח ה-API וקודי הגישה) לא כתובים כאן:
+# מגדירים אותם בלוח הבקרה של Cloudflare או בפקודה wrangler secret put (ראו README.md).
+name = "ot-form-proxy"
+main = "index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# הכתובות שמהן מותר לפנות ל-Worker, מופרדות בפסיק
+ALLOWED_ORIGINS = "https://oriel7ai.github.io"
+# מספר הבקשות המרבי ליום לכל קוד גישה
+DAILY_LIMIT = "60"
+
+# ההוראות ל-Claude ומונה השימוש. את ה-id מקבלים כשיוצרים את ה-namespace (ראו README.md).
+[[kv_namespaces]]
+binding = "OT_FORM"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
