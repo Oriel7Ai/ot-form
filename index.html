@@ -133,6 +133,7 @@ button.btn:disabled{opacity:.55;cursor:wait}
 .rvq{display:block;color:var(--muted);font-size:14px;margin-top:2px}
 .rvlist li.noq .rvq{color:var(--warn)}
 .rvnote{color:var(--muted);font-size:13px}
+.fbbtn{font-size:14px;color:var(--muted);white-space:nowrap}
 .agecheck:empty{display:none}
 .agecheck{background:var(--yellow-soft);border:1px solid var(--yellow-line);border-radius:12px;padding:10px 14px;margin-bottom:16px;font-size:15px}
 .suggbox{background:var(--yellow-soft);border:1px solid var(--yellow-line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
@@ -293,6 +294,7 @@ input[data-auto="1"]{background:var(--green-soft);color:var(--green-ink);font-we
           <button class="btn" id="keyBtn" role="menuitem">הגדרת מפתח API</button>
           <button class="btn" id="myPhrases" role="menuitem">הניסוחים שלי</button>
           <button class="btn" id="meBtn" role="menuitem">פרטי המאבחנת ל-Word</button>
+          <button class="btn" id="insightsBtn" role="menuitem">תובנות שימוש ומשוב</button>
           <button class="btn" id="resetAll" role="menuitem">ניקוי הטופס</button>
         </div>
       </details>
@@ -856,7 +858,7 @@ function renderForm(){
     else nav += '<div class="nextwrap">' + (s.id === 's_import' ? '<button type="button" class="btn ghost" data-go="' + (i + 1) + '">אין קבצים, לדלג</button>' : '') +
       '<button type="button" class="btn cta" data-go="' + (i + 1) + '">המשך: ' + esc(next.short === 'סיום' ? 'סקירה וייצוא' : next.title.replace(/^ממצאים: /, '')) + ' ←</button></div>';
     nav += '</div>';
-    return '<div class="page" id="' + s.id + '"><h2 tabindex="-1">' + esc(s.title) + '</h2><p class="lead">' + esc(s.lead) + '</p><div class="agenote" data-agenote="' + s.id + '"></div>' + body + peek + nav + '</div>';
+    return '<div class="page" id="' + s.id + '"><h2 tabindex="-1">' + esc(s.title) + '</h2><p class="lead">' + esc(s.lead) + ' <button type="button" class="linkbtn fbbtn" data-fb="' + i + '">🚩 משוב על שלב זה</button></p><div class="agenote" data-agenote="' + s.id + '"></div>' + body + peek + nav + '</div>';
   }).join('');
   $('presets').innerHTML = PRESETS.map(p => '<button type="button" class="preset" data-preset="' + p.id + '"><b>' + esc(p.title) + '</b><span>' + esc(p.desc) + '</span></button>').join('');
   document.addEventListener('click', e => {
@@ -879,6 +881,7 @@ function renderForm(){
 // focus: מעבר שהמשתמשת ביקשה. הפוקוס עובר לכותרת השלב, כדי שקורא מסך יודיע עליו והמקלדת תמשיך משם
 function goStep(i, focus){
   cur = Math.max(0, Math.min(STEPS.length - 1, i));
+  TELEMETRY.stepChange(cur);
   document.querySelectorAll('.page').forEach((p, j) => p.classList.toggle('on', j === cur));
   document.querySelectorAll('#stepper .st').forEach((b, j) => { b.classList.toggle('cur', j === cur); if (j === cur) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current'); });
   try { sessionStorage.setItem(SESSION_STORE + '_step', cur); } catch(e){}
@@ -1509,7 +1512,7 @@ function renderOut(){
     '<button data-reset="' + f[0] + '" hidden>חזרה לאוטומטי</button><button data-copy="' + f[0] + '">העתקה</button><button class="addtxt" data-addtxt="' + f[0] + '" type="button">+ הוספת טקסט</button></div>' +
     '<textarea id="o_' + f[0] + '" aria-label="' + esc(f[1]) + '"></textarea></div>').join('');
   $('out').addEventListener('input', e => {
-    if (e.target.id && e.target.id.startsWith('o_')){ const k = e.target.id.slice(2); dirty[k] = true; aiDone[k] = false; delete aiWarn[k]; markField(k); if (polishUndo) delete polishUndo[k]; updateExtras(); saveSessionSoon(); }
+    if (e.target.id && e.target.id.startsWith('o_')){ const k = e.target.id.slice(2); if (!dirty[k] || aiDone[k]) TELEMETRY.field(k, 'dirty'); dirty[k] = true; aiDone[k] = false; delete aiWarn[k]; markField(k); if (polishUndo) delete polishUndo[k]; updateExtras(); saveSessionSoon(); }
   });
   $('out').addEventListener('click', e => {
     const c = e.target.getAttribute('data-copy'), r = e.target.getAttribute('data-reset');
@@ -1744,7 +1747,19 @@ function hasContent(){
   const changed = k => { const el = $(k); return !(el && el.tagName === 'SELECT' && el.options[0] && el.options[0].value === s.ctl[k]); };
   return !!(Object.keys(s.chips).length || s.goals.length || Object.keys(s.out).length || Object.keys(s.ctl).some(changed));
 }
+// ---- גרסאות של פורמט הטיוטה: כששם של שדה משתנה, מוסיפים כאן המרה מהגרסה הקודמת ----
+const CURRENT_STATE_VERSION = 1;
+const STATE_MIGRATIONS = {
+  // 1: s => { const n = structuredClone(s); /* שינוי שמות שדות */ n.v = 2; return n; },
+};
+function migrateState(st){
+  if (!st || typeof st !== 'object') return st;
+  let cur = st;
+  while ((cur.v || 1) < CURRENT_STATE_VERSION){ const fn = STATE_MIGRATIONS[cur.v || 1]; if (!fn) break; cur = fn(cur); }
+  return cur;
+}
 function restoreState(st){
+  st = migrateState(st);
   document.querySelectorAll('[data-chips] input, #goalChips input').forEach(i => i.checked = false);
   document.querySelectorAll('.ctl.filled, .preset.on').forEach(c => c.classList.remove('filled', 'on'));
   presetActive = null; if ($('presetMsg')) $('presetMsg').innerHTML = '';
@@ -1793,7 +1808,7 @@ function saveSessionSoon(){ clearTimeout(saveSessionSoon.t); saveSessionSoon.t =
 function restoreSession(){
   let st = null;
   try { st = JSON.parse(sessionStorage.getItem(SESSION_STORE)); } catch(e){}
-  if (!st || st.v !== 1) return false;
+  if (!st || (st.v || 1) > CURRENT_STATE_VERSION) return false;   // טיוטה מגרסה חדשה מהקוד הזה
   try { restoreState(st); } catch(e){ return false; }
   goStep(SAVED_STEP);
   flash('הטופס שוחזר. מטעמי פרטיות השם לא נשמר, וצריך להקליד אותו שוב בשלב הפתיחה.');
@@ -2222,7 +2237,7 @@ async function polish(){
     let n = 0;
     POLISH_KEYS.forEach(k => {
       if (typeof obj[k] === 'string' && obj[k].trim() && payload[k] !== undefined){
-        before[k] = {t: $('o_' + k).value, dirty: !!dirty[k], ai: !!aiDone[k]};
+        before[k] = {t: $('o_' + k).value, dirty: !!dirty[k], ai: !!aiDone[k]}; TELEMETRY.field(k, 'polish');
         const miss = polishMissing(payload[k], obj[k]); if (miss.length) aiWarn[k] = miss; else delete aiWarn[k];
         $('o_' + k).value = showNames(obj[k].trim()); dirty[k] = true; aiDone[k] = true; markField(k); autoSize($('o_' + k)); n++;
       }
@@ -2253,7 +2268,7 @@ function polishMissing(orig, polished){
 function undoPolish(){
   if (!polishUndo) return;
   Object.keys(polishUndo).forEach(k => {
-    const p = polishUndo[k]; dirty[k] = p.dirty; aiDone[k] = p.ai; delete aiWarn[k];
+    const p = polishUndo[k]; dirty[k] = p.dirty; aiDone[k] = p.ai; delete aiWarn[k]; TELEMETRY.field(k, 'polishUndo');
     if (p.dirty) $('o_' + k).value = p.t;
   });
   polishUndo = null; update(); saveSession();
@@ -2957,6 +2972,63 @@ function phraseAction(a, el){
 // =====================================================================
 //  כללי
 // =====================================================================
+// =====================================================================
+//  תובנות שימוש ומשוב (אנונימי, נשמר רק בדפדפן הזה, יוצא רק בייצוא ידני)
+//  נאספים: זמן בכל שלב, אילו צ'יפים נבחרו, עריכות וניסוחים לכל שדה, והערות משוב.
+//  לא נאסף: שום טקסט מהדוח, שמות או ערכים שהוזנו. הערות המשוב עוברות הסרת פרטים מזהים לפני השמירה.
+// =====================================================================
+const TELEMETRY = (() => {
+  const KEY = 'ot_form_telemetry_v1';
+  let step = 0, enteredAt = Date.now();
+  const empty = () => ({v: 1, stepDurationsSec: {}, chipSelections: {}, fieldStats: {}, feedbackItems: []});
+  function data(){ try { return Object.assign(empty(), JSON.parse(localStorage.getItem(KEY)) || {}); } catch(e){ return empty(); } }
+  function save(d){ try { localStorage.setItem(KEY, JSON.stringify(d)); } catch(e){} }
+  function flushStep(){
+    const now = Date.now(), sec = Math.round((now - enteredAt) / 1000);
+    if (sec > 0 && sec < 3600){ const d = data(); const id = STEPS[step].id; d.stepDurationsSec[id] = (d.stepDurationsSec[id] || 0) + sec; save(d); }
+    enteredAt = now;
+  }
+  return {
+    stepChange(i){ if (i === step) return; flushStep(); step = i; },
+    chip(group, key){ const d = data(), k = group + ':' + key; d.chipSelections[k] = (d.chipSelections[k] || 0) + 1; save(d); },
+    field(id, type){ const d = data(); const f = d.fieldStats[id] = d.fieldStats[id] || {dirty: 0, polish: 0, polishUndo: 0}; f[type] = (f[type] || 0) + 1; save(d); },
+    // ההערה עוברת את אותה הסרת פרטים מזהים כמו טקסט שנשלח ל-Claude; נשמר רק הטקסט הנקי
+    cleanComment(t){ return DEID.toPlain(DEID.deidentify(hideNames(DEID.normalize(t).trim()), {labels: true, dates: true, phones: true, ids: true, emails: true, address: true, cities: true, doctors: true, kupa: true})); },
+    feedback(stepIdx, text){
+      const c = this.cleanComment(text); if (!c) return '';
+      const page = $(STEPS[stepIdx].id), checked = [...page.querySelectorAll('[data-chips] input:checked')].map(i => i.closest('[data-chips]').dataset.chips + ':' + i.value);
+      const d = data(); d.feedbackItems.push({date: new Date().toISOString().slice(0, 10), step: STEPS[stepIdx].id, chips: checked, comment: c}); save(d);
+      return c;
+    },
+    data(){ flushStep(); return data(); },
+    clear(){ try { localStorage.removeItem(KEY); } catch(e){} enteredAt = Date.now(); },
+  };
+})();
+function openFeedback(i){
+  openModal('<h3>משוב על השלב "' + esc(STEPS[i].title) + '"</h3><p class="hint">מה חסר או מה כדאי לשפר כאן? למשל: "חסר צ\'יפ על אחיזת מספריים". ההערה נשמרת רק במחשב הזה, ויוצאת ממנו רק כשמייצאים את קובץ התובנות.</p>' +
+    '<label class="lbl" for="fbText">ההערה</label><textarea id="fbText" style="min-height:90px"></textarea>' +
+    '<p class="hint">כך היא תישמר (בלי פרטים מזהים):</p><div class="sendprev" id="fbPrev"></div>' +
+    '<div class="mrow"><button class="btn primary" data-fb-save="' + i + '">שמירה</button><button class="btn" data-fb-close="1">ביטול</button></div>');
+}
+function openInsights(){
+  const d = TELEMETRY.data(), steps = Object.keys(d.stepDurationsSec).length, fields = Object.keys(d.fieldStats).length;
+  openModal('<h3>תובנות שימוש ומשוב</h3><p>כדי לשפר את הטופס, הדפדפן הזה סופר באופן אנונימי כמה זמן עובדים בכל שלב, אילו בחירות משתמשים בהן, ואילו שדות עורכים ידנית או מבטלים בהם את הניסוח של Claude. ' +
+    '<b>לא נשמר שום טקסט מהדוחות ושום פרט על מטופלים.</b> שום דבר לא נשלח אוטומטית: הקובץ יוצא רק אם מורידים אותו ושולחים אותו.</p>' +
+    '<ul><li>שלבים שנמדדו: ' + steps + '</li><li>שדות עם עריכות או ניסוחים: ' + fields + '</li><li>הערות משוב: ' + d.feedbackItems.length + '</li></ul>' +
+    '<div class="mrow"><button class="btn primary" data-ins="dl">הורדת קובץ התובנות</button><button class="btn" data-ins="clear">מחיקת הנתונים</button><button class="btn" data-ins="close">סגירה</button></div>');
+}
+function insightsAction(a){
+  if (a === 'close') return closeModal();
+  if (a === 'clear'){ if (confirm('למחוק את כל נתוני השימוש והמשוב מהמחשב הזה?')){ TELEMETRY.clear(); closeModal(); flash('הנתונים נמחקו'); } return; }
+  const bundle = {exportedAt: new Date().toISOString().slice(0, 10),
+    privacyNotice: 'מדדי שימוש אנונימיים, הערות משוב אחרי הסרת פרטים מזהים, וניסוחים אישיים כלליים. בלי מידע על מטופלים.',
+    telemetry: TELEMETRY.data(), userCustomPhrases: loadPhrases()};
+  const a2 = document.createElement('a'); a2.href = URL.createObjectURL(new Blob([JSON.stringify(bundle, null, 2)], {type: 'application/json'}));
+  a2.download = 'ot-form-insights-' + bundle.exportedAt + '.json'; document.body.appendChild(a2); a2.click();
+  setTimeout(() => { URL.revokeObjectURL(a2.href); a2.remove(); }, 1500);
+  closeModal(); flash('קובץ התובנות נשמר בתיקיית ההורדות');
+}
+
 // ---- נעילה אחרי חוסר פעילות: מסתירה את הטופס (לא מוחקת), כשיש בו תוכן ----
 let IDLE_MS = 15 * 60 * 1000, lastActive = Date.now();
 function lockScreen(){
@@ -3033,12 +3105,23 @@ $('modal').addEventListener('keydown', e => {
   if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
   const b = $('modal').querySelector('[data-k="unlock"],[data-k="save"],[data-d="save"],[data-d="open"],[data-c="save"],[data-p="add"],[data-p="mesave"]'); if (b){ e.preventDefault(); b.click(); }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modalWrap').hidden){ const no = $('modal').querySelector('[data-send="no"],[data-k="close"],[data-d="close"],[data-c="close"],[data-p="close"],[data-dict="no"]'); if (no) no.click(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modalWrap').hidden){ const no = $('modal').querySelector('[data-send="no"],[data-k="close"],[data-d="close"],[data-c="close"],[data-p="close"],[data-dict="no"],[data-fb-close],[data-ins="close"]'); if (no) no.click(); } });
 document.addEventListener('keydown', trapFocus);
 $('modal').addEventListener('click', e => { const el = e.target.closest && e.target.closest('[data-p]'); if (el) phraseAction(el.getAttribute('data-p'), el); });
 $('pages').addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-addph]'); if (b) openAddPhrase(b.getAttribute('data-addph')); });
 $('myPhrases').addEventListener('click', openMyPhrases);
 $('meBtn').addEventListener('click', openMe);
+$('insightsBtn').addEventListener('click', openInsights);
+$('pages').addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-fb]'); if (b) openFeedback(+b.dataset.fb); });
+// צ'יפ שנבחר נספר (רק מזהה הצ'יפ, בלי שום תוכן)
+document.addEventListener('change', e => { const box = e.target.closest && e.target.closest('[data-chips]'); if (box && e.target.checked) TELEMETRY.chip(box.dataset.chips, e.target.value); });
+$('modal').addEventListener('input', e => { if (e.target.id === 'fbText') $('fbPrev').textContent = TELEMETRY.cleanComment(e.target.value); });
+$('modal').addEventListener('click', e => {
+  const t = e.target; if (!t.getAttribute) return;
+  if (t.getAttribute('data-fb-close')) return closeModal();
+  const sv = t.getAttribute('data-fb-save'); if (sv !== null){ const c = TELEMETRY.feedback(+sv, $('fbText').value); closeModal(); flash(c ? 'המשוב נשמר. תודה!' : 'לא נכתבה הערה'); }
+  const ia = t.getAttribute('data-ins'); if (ia) insightsAction(ia);
+});
 // תפריט "עוד": נסגר אחרי בחירה, בלחיצה מחוץ לו וב-Escape
 $('more').addEventListener('click', e => { if (e.target.closest('.more-menu button')) $('more').open = false; });
 document.addEventListener('click', e => { if ($('more').open && !$('more').contains(e.target)) $('more').open = false; });

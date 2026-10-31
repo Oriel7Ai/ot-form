@@ -712,6 +712,64 @@ test('טיוטה מוצפנת שומרת את הטקסט המיובא; השמי�
   assert.strictEqual(r.mode, 'notes');
 });
 
+test('גרסאות טיוטה: טיוטה מהגרסה הנוכחית נטענת, וטיוטה מגרסה עתידית לא נטענת בשקט', async b => {
+  const page = await fresh(b);
+  const r = await page.evaluate(() => {
+    const st = {v: 1, ctl: {ageY: '5'}, chips: {}, goals: [], out: {}};
+    const same = migrateState(st) === st;
+    sessionStorage.setItem(SESSION_STORE, JSON.stringify({v: CURRENT_STATE_VERSION + 1, ctl: {ageY: '9'}, chips: {}, goals: [], out: {}}));
+    return {same, future: restoreSession()};
+  });
+  assert.deepStrictEqual(r, {same: true, future: false});
+});
+
+test('תובנות שימוש: זמן בשלבים, צ\'יפים, עריכות, ניסוח וביטול — בלי טקסט מהדוח', async b => {
+  const ctx = await b.newContext(); await ctx.route(u => !u.href.startsWith(URL), r => r.abort());
+  const page = await ctx.newPage(); await page.clock.install(); await page.goto(URL);
+  await page.fill('#name', 'נועם');
+  await page.clock.fastForward(7000);
+  await tab(page, 's_bg'); await chip(page, 'reasons', 'write');
+  await tab(page, 'st_review');
+  await page.fill('#o_background', 'נועם ילד מקסים. טקסט פרטי מהדוח.');
+  const sent = await mockClaude(page, {f_fm: 'x'});
+  await page.evaluate(() => { chipInput('fm', 'midNo').checked = true; update(); });
+  await page.click('#polish'); await page.click('[data-send="yes"]'); await page.waitForSelector('#undoPolish');
+  await page.click('#undoPolish');
+  const d = await page.evaluate(() => TELEMETRY.data());
+  assert.ok(d.stepDurationsSec.st_start >= 7, JSON.stringify(d.stepDurationsSec));
+  assert.strictEqual(d.chipSelections['reasons:write'], 1);
+  assert.strictEqual(d.fieldStats.background.dirty, 1);
+  assert.strictEqual(d.fieldStats.f_fm.polish, 1); assert.strictEqual(d.fieldStats.f_fm.polishUndo, 1);
+  const raw = await page.evaluate(() => localStorage.getItem('ot_form_telemetry_v1'));
+  assert.ok(!raw.includes('נועם') && !raw.includes('טקסט פרטי'));
+  await ctx.close();
+});
+
+test('משוב על שלב: נשמר בלי פרטים מזהים, ומופיע בקובץ התובנות', async b => {
+  const page = await fresh(b);
+  await page.fill('#name', 'נועם'); await page.fill('#surname', 'לוי');
+  await tab(page, 's_find');
+  await page.click('#s_find1 [data-fb]');
+  await page.fill('#fbText', 'אצל נועם לוי מחיפה חסר צ\'יפ על אחיזת מספריים. טל 050-1234567');
+  assert.match(await page.textContent('#fbPrev'), /\[שם\] \[שם משפחה\] מ\[יישוב\] חסר צ'יפ על אחיזת מספריים\. טל \[טלפון\]/);
+  await page.click('[data-fb-save]');
+  // לוכדים את תוכן הקובץ לפני ההורדה (ה-CSP של האתר לא מאפשר fetch לכתובות blob:)
+  await page.evaluate(() => { HTMLAnchorElement.prototype.click = function(){ window.__dl = this.download; };
+    const orig = URL.createObjectURL; URL.createObjectURL = b => { window.__blob = b; return orig(b); }; });
+  await page.click('#more summary'); await page.click('#insightsBtn');
+  assert.match(await page.textContent('#modal'), /הערות משוב: 1/);
+  await page.click('[data-ins="dl"]');
+  const bundle = await page.evaluate(() => window.__blob.text());
+  assert.match(await page.evaluate(() => window.__dl), /^ot-form-insights-\d{4}-\d{2}-\d{2}\.json$/);
+  assert.ok(!bundle.includes('נועם') && !bundle.includes('לוי') && !bundle.includes('050-1234567') && !bundle.includes('חיפה'));
+  const fb = JSON.parse(bundle).telemetry.feedbackItems[0];
+  assert.strictEqual(fb.step, 's_find1');
+  // מחיקה
+  page.once('dialog', d => d.accept());
+  await page.click('#more summary'); await page.click('#insightsBtn'); await page.click('[data-ins="clear"]');
+  assert.strictEqual(await page.evaluate(() => TELEMETRY.data().feedbackItems.length), 0);
+});
+
 test('פענוח תשובת Claude בהזרמה, כולל מעבר למודל חלופי', async b => {
   const page = await fresh(b);
   const r = await page.evaluate(() => parseSSE([
