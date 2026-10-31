@@ -510,7 +510,7 @@ test('הפחתת תנועה: בלי אנימציות למי שביקש', async b
 
 test('שליפה מקבצים כוללת את "השפעה על התפקוד"', async b => {
   const page = await fresh(b);
-  assert.strictEqual(await page.evaluate(() => 'impact' in extractSchema() && /שדה impact/.test(EXTRACT_GUIDE)), true);
+  assert.strictEqual(await page.evaluate(() => 'impact' in extractSchema() && /impact:/.test(EXTRACT_GUIDE)), true);
 });
 
 // תשובת Claude מדומה בהזרמה; שומרת את גוף הבקשה כדי לבדוק אילו הוראות נשלחו
@@ -633,6 +633,83 @@ test('הכתבה: הסבר פרטיות לפני השימוש הראשון', asy
   await page.click('#s_bg .mic');   // בפעם השנייה בלי הסבר
   assert.strictEqual(await page.evaluate(() => window.__started), 2);
   assert.strictEqual(await page.isVisible('#modalWrap'), false);
+});
+
+test('שליפה: מסמכים קודמים לא ממלאים ממצאים; רשמי האבחון ממלאים גם ממצאים וציונים', async b => {
+  const page = await fresh(b);
+  const r = await page.evaluate(() => { const p = extractSchema('prev'), n = extractSchema('notes');
+    return {prevFm: 'fm' in p, prevBeery: 'beery_vmi_p' in p, prevTools: Object.keys(p.tools.options).sort().join(),
+      notesFm: 'fm' in n, notesBeery: 'beery_vmi_p' in n, notesAyres: 'ay_equil' in n, notesSp2: 'sq_seek' in n, notesTools: 'beery' in n.tools.options}; });
+  assert.deepStrictEqual(r, {prevFm: false, prevBeery: false, prevTools: 'q_gan,q_par,q_teach,talk', notesFm: true, notesBeery: true, notesAyres: true, notesSp2: true, notesTools: true});
+});
+
+test('שליפה וניתוח: Opus עם מבנה מובטח, ציטוט לכל פריט, אישור לפני מילוי ומטרות מוצעות', async b => {
+  const page = await fresh(b);
+  await page.fill('#name', 'נועה');
+  await tab(page, 's_bg'); await page.selectOption('#ref', 'parents');   // כבר מולא: לא ישתנה
+  await tab(page, 's_import');
+  await page.check('[name="imMode"][value="notes"]');
+  await page.fill('#imPaste', 'הגננת הפנתה בגלל קושי בגזירה. נצפה קושי בחציית קו האמצע. ב-Beery אינטגרציה ויזו-מוטורית אחוזון 9.');
+  await page.click('#imRead');
+  const items = [
+    {field: 'fm', value: 'midNo', quote: 'נצפה קושי בחציית קו האמצע'},
+    {field: 'beery_vmi_p', value: '9', quote: 'אינטגרציה ויזו-מוטורית אחוזון 9'},
+    {field: 'fm', value: 'cutNo', quote: 'הגזירה הייתה איטית מאוד'},          // ציטוט שלא מופיע בטקסט
+    {field: 'ref', value: 'ganenet', quote: 'הגננת הפנתה'},                   // שדה שכבר מולא
+    {field: 'fm', value: 'לא-קיים', quote: 'נצפה קושי'},                      // מפתח לא חוקי: נזרק
+  ];
+  const sent = await mockClaude(page, {items});
+  await page.click('#imExtract'); await page.click('[data-send="yes"]');
+  await page.waitForSelector('#imReview .rvlist');
+  assert.strictEqual(sent[0].model, 'claude-opus-5-5');
+  assert.strictEqual(sent[0].output_config.format.type, 'json_schema');
+  const rows = await page.$$eval('#imReview [data-rvi]', els => els.map(e => [e.checked, e.disabled, e.closest('li').textContent]));
+  assert.strictEqual(rows.length, 4);
+  assert.deepStrictEqual(rows.map(r => [r[0], r[1]]), [[true, false], [true, false], [false, false], [false, true]]);
+  assert.match(rows[2][2], /הציטוט לא נמצא בטקסט/);
+  assert.match(rows[3][2], /כבר מולא/);
+  assert.strictEqual(await page.evaluate(() => chipInput('fm', 'midNo').checked), false);   // לפני אישור: כלום לא השתנה
+  await page.click('[data-rv="apply"]');
+  assert.strictEqual(await page.evaluate(() => chipInput('fm', 'midNo').checked), true);
+  assert.strictEqual(await page.$eval('#beery_vmi_p', e => e.value), '9');
+  assert.strictEqual(await page.evaluate(() => chipInput('fm', 'cutNo').checked), false);
+  assert.strictEqual(await page.$eval('#ref', e => e.value), 'parents');
+  // מטרות לפי הממצאים שאושרו
+  assert.ok(await page.$('#imReview [data-goal="graph"]'));
+  await page.click('[data-rv="goals"]');
+  assert.ok((await page.evaluate(() => goalOrder)).includes('graph'));
+});
+
+test('שליפה: אם המודל לא תומך במבנה מובטח (400), נשלחת שוב בלי', async b => {
+  const page = await fresh(b);
+  await tab(page, 's_import'); await page.fill('#imPaste', 'רקע משפחתי: בת שנייה מתוך שלושה.'); await page.click('#imRead');
+  await page.evaluate(() => { apiKey = 'sk-ant-test'; });
+  const sent = [];
+  await page.route('https://api.anthropic.com/v1/messages', r => { const b = JSON.parse(r.request().postData()); sent.push(b);
+    if (b.output_config) return r.fulfill({status: 400, contentType: 'application/json', body: '{"error":{"message":"output_config not supported"}}'});
+    r.fulfill({status: 200, contentType: 'text/event-stream', body: 'data: ' + JSON.stringify({type:'content_block_delta', index:0, delta:{type:'text_delta', text: '{"items":[{"field":"famNote","value":"בת שנייה מתוך שלושה.","quote":"בת שנייה מתוך שלושה"}]}'}}) + '\n\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n'}); });
+  await page.click('#imExtract'); await page.click('[data-send="yes"]');
+  await page.waitForSelector('#imReview .rvlist');
+  assert.strictEqual(sent.length, 2); assert.ok(sent[0].output_config); assert.ok(!sent[1].output_config);
+});
+
+test('טיוטה מוצפנת שומרת את הטקסט המיובא; השמירה האוטומטית לא', async b => {
+  const page = await fresh(b);
+  await page.fill('#name', 'נועה');
+  await tab(page, 's_import'); await page.check('[name="imMode"][value="notes"]');
+  await page.fill('#imPaste', 'נועה הגיעה עם אמה. נצפה קושי בגזירה.'); await page.click('#imRead');
+  const r = await page.evaluate(async () => {
+    saveSession(); const sess = sessionStorage.getItem(SESSION_STORE);
+    const enc = await encryptJson(collectState(true), 'Secret1');
+    restoreState({});                                   // טופס ריק
+    const empty = importOutgoing();
+    restoreState(await decryptJson(enc, 'Secret1'));
+    return {sessHasText: sess.includes('גזירה'), empty, back: importOutgoing(), mode: importMode};
+  });
+  assert.strictEqual(r.sessHasText, false);
+  assert.strictEqual(r.empty, '');
+  assert.strictEqual(r.back, '[שם] הגיעה עם אמה. נצפה קושי בגזירה.');
+  assert.strictEqual(r.mode, 'notes');
 });
 
 test('פענוח תשובת Claude בהזרמה, כולל מעבר למודל חלופי', async b => {

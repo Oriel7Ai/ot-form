@@ -124,6 +124,15 @@ button.btn:disabled{opacity:.55;cursor:wait}
 .peekbody{padding:0 18px 16px;white-space:pre-wrap;font-size:15px}
 .pk{margin-bottom:12px}.pk b{display:block;color:var(--muted);font-size:13px;margin-bottom:2px}
 .agebar{background:var(--soft);border-radius:10px;padding:10px 14px;font-size:14px;color:var(--muted);margin-bottom:16px}
+.imkind{border:0;padding:0;margin:0 0 16px}
+.imkind label{display:block;margin:4px 0;cursor:pointer}
+.rvlist{list-style:none;margin:0;padding:0;max-height:60vh;overflow:auto}
+.rvlist li{border-bottom:1px solid var(--line);padding:8px 0}
+.rvlist label{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.rvlist input{margin-top:5px;flex:none}
+.rvq{display:block;color:var(--muted);font-size:14px;margin-top:2px}
+.rvlist li.noq .rvq{color:var(--warn)}
+.rvnote{color:var(--muted);font-size:13px}
 .agecheck:empty{display:none}
 .agecheck{background:var(--yellow-soft);border:1px solid var(--yellow-line);border-radius:12px;padding:10px 14px;margin-bottom:16px;font-size:15px}
 .suggbox{background:var(--yellow-soft);border:1px solid var(--yellow-line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
@@ -580,6 +589,10 @@ const IMPORT_HTML = `
 <div class="card"><h3>1. קבצים לקריאה</h3>
   <div class="ctl"><label class="lbl" for="imFiles">קובצי Word (docx) או טקסט (txt)</label><input type="file" id="imFiles" multiple accept=".docx,.txt"></div>
   <div class="ctl"><label class="lbl" for="imPaste">או הדביקי טקסט (למשל מתוך Cliks או מ-PDF)</label><textarea id="imPaste" style="min-height:90px"></textarea></div>
+  <fieldset class="ctl imkind"><legend class="lbl">סוג הטקסט</legend>
+    <label><input type="radio" name="imMode" value="prev" checked> מסמכים קודמים <span class="hint">(שאלונים, דוחות קודמים, סיכומי שיחה): ממלאים רקע ודיווחים</span></label>
+    <label><input type="radio" name="imMode" value="notes"> הרשמים שלי מהאבחון הנוכחי <span class="hint">(תצפיות, ציונים): ממלאים גם ממצאים, ציונים ומטרות</span></label>
+  </fieldset>
   <button class="btn primary" id="imRead">קריאה</button>
   <p class="hint">הקבצים נקראים בתוך הדף, במכשיר שלך. שום דבר לא נשלח בשלב הזה.</p>
   <div id="imErr"></div>
@@ -593,11 +606,12 @@ const IMPORT_HTML = `
 <div class="card"><h3>3. מילוי הטופס</h3>
   <div class="row" style="gap:8px">
     <button class="btn" id="imHeads">מילוי לפי כותרות (בלי Claude)</button>
-    <button class="btn primary" id="imExtract">שליפה אוטומטית בעזרת Claude</button>
+    <button class="btn primary" id="imExtract">שליפה וניתוח בעזרת Claude</button>
   </div>
-  <p class="hint">בחרי אחת משתי הדרכים. "מילוי לפי כותרות" מעתיק לשדות ההערות קטעים מתחת לכותרות מוכרות (רקע התפתחותי, רקע משפחתי, דיווח ההורים וכו'), כמו בדוחות Cliks. "שליפה בעזרת Claude" ממלא גם בחירות ושדות, ושולח רק את הטקסט שבתצוגה. שדות שכבר מילאת לא נדרסים.</p>
+  <p class="hint">בחרי אחת משתי הדרכים. "מילוי לפי כותרות" מעתיק לשדות ההערות קטעים מתחת לכותרות מוכרות, בלי לשלוח דבר. "שליפה וניתוח בעזרת Claude" מזהה את החלקים גם בלי כותרות, ומציע ערכים לכל הטופס (לפי סוג הטקסט), כל אחד עם ציטוט מהטקסט. שום דבר לא נכנס לטופס לפני שתאשרי. נשלח רק הטקסט שבתצוגה.</p>
   <div id="imStatus"></div>
-</div>`;
+</div>
+<div id="imReview"></div>`;
 
 // בנק המטרות. תתי-המטרות מנוסחות במונחים מדידים (כמה, כמה זמן, באיזו מידת עצמאות),
 // כדי שאפשר יהיה לבדוק בסוף הטיפול אם הושגו. המספרים הם ברירת מחדל: אפשר לערוך בדוח לכל ילד.
@@ -1654,10 +1668,13 @@ function confirmSend(title, text){
 
 // קריאה ל-Claude בהזרמה (stream), כדי להציג התקדמות ולא להיתקע על בקשות ארוכות.
 // onProgress מקבל את מספר התווים שהתקבלו עד עכשיו.
-async function callClaude(system, user, onProgress){
-  const model = getModel();
+// opts.model: מודל אחר מברירת המחדל; opts.format: מבנה תשובה מובטח (structured outputs)
+async function callClaude(system, user, onProgress, opts){
+  opts = opts || {};
+  const model = opts.model || getModel();
   const headers = {'content-type':'application/json', 'x-api-key':apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true'};
   const body = {model, max_tokens:MAX_TOKENS, stream:true, system, messages:[{role:'user', content:user}]};
+  if (opts.format) body.output_config = {format: opts.format};
   if (FALLBACK_MODELS.includes(model)){ headers['anthropic-beta'] = 'server-side-fallback-2026-07-01'; body.fallbacks = 'default'; }
   let res;
   try { res = await fetch(API_URL, {method:'POST', headers, body: JSON.stringify(body)}); }
@@ -1668,7 +1685,7 @@ async function callClaude(system, user, onProgress){
     if (res.status === 401) throw new Error('המפתח לא תקין או בוטל (401). פתחי את "הגדרת מפתח" והזיני מפתח חדש.');
     if (res.status === 429) throw new Error('יותר מדי בקשות או שנגמרה המכסה (429). נסי שוב בעוד דקה, ובדקי את תקרת ההוצאה.');
     if (res.status === 529 || res.status >= 500) throw new Error('השרת של Claude עמוס כרגע (' + res.status + '). נסי שוב בעוד כמה דקות.');
-    throw new Error('Claude החזיר שגיאה ' + res.status + (m ? ': ' + m : ''));
+    const err = new Error('Claude החזיר שגיאה ' + res.status + (m ? ': ' + m : '')); err.status = res.status; throw err;
   }
   const sse = parseSSE(await readStream(res, n => onProgress && onProgress(n)));
   if (sse.error) throw new Error('Claude החזיר שגיאה באמצע התשובה: ' + sse.error);
@@ -1706,7 +1723,8 @@ function parseSSE(raw){
 //  טיוטה מוצפנת: שמירה לקובץ ופתיחה ממנו (למעבר בין טלפון למחשב)
 // =====================================================================
 const DRAFT_SKIP = ['polishStyle', 'imFiles', 'imPaste', 'imExtra', 'kKey', 'kCode', 'kCode2', 'kModel', 'dPass', 'dPass2'];
-function collectState(){
+// withImport: גם הטקסט שיובא (המקורי, לפני הסרת הפרטים). רק לטיוטות המוצפנות, לא לשמירה האוטומטית.
+function collectState(withImport){
   const st = {v:1, ctl:{}, chips:{}, goals:goalOrder.slice(), out:{}};
   document.querySelectorAll('header input[id], header select[id], #pages input[id], #pages select[id], #pages textarea[id]').forEach(el => {
     if (DRAFT_SKIP.includes(el.id) || el.id.startsWith('o_') || el.type === 'file' || el.type === 'checkbox') return;   // שדות הדוח נשמרים בנפרד (out)
@@ -1717,6 +1735,7 @@ function collectState(){
     if (k.length) st.chips[box.getAttribute('data-chips')] = k;
   });
   FIELDS.forEach(f => { if (dirty[f[0]]) st.out[f[0]] = {t: $('o_' + f[0]).value, ai: !!aiDone[f[0]]}; });
+  if (withImport && importRaw) st.imp = {raw: importRaw, extra: val('imExtra'), mode: importMode, src: importSources.slice()};
   return st;
 }
 // יש תוכן אם משהו שונה מברירת המחדל (בחירה ראשונה ברשימה, כמו המגדר או סוג הציון במחשבון, לא נחשבת)
@@ -1740,7 +1759,18 @@ function restoreState(st){
   FIELDS.forEach(f => { dirty[f[0]] = false; aiDone[f[0]] = false; });
   update();
   Object.keys(st.out || {}).forEach(k => { const ta = $('o_' + k); if (!ta) return; ta.value = st.out[k].t; dirty[k] = true; aiDone[k] = !!st.out[k].ai; markField(k); autoSize(ta); });
+  restoreImport(st.imp);
   saveSession();
+}
+
+// הטקסט המיובא מטיוטה: חוזר לשלב הייבוא, עם התצוגה המקדימה, כדי שאפשר יהיה לשלוף ממנו שוב
+function restoreImport(imp){
+  importRaw = imp && imp.raw || ''; importSources = imp && imp.src || []; importRes = null;
+  importMode = imp && imp.mode === 'notes' ? 'notes' : 'prev';
+  document.querySelectorAll('[name="imMode"]').forEach(r => r.checked = r.value === importMode);
+  $('imExtra').value = imp && imp.extra || ''; extractItems = []; $('imReview').innerHTML = ''; $('imStatus').innerHTML = '';
+  if (importRaw) importDeid();
+  else { $('imPreview').innerHTML = '<span class="msg">התצוגה תופיע כאן אחרי הקריאה.</span>'; $('imInfo').innerHTML = ''; }
 }
 
 // ---- שמירה אוטומטית בלשונית הנוכחית (sessionStorage) ----
@@ -1774,7 +1804,7 @@ function restoreSession(){
 let resetUndo = null;
 function resetForm(){
   if (!hasContent()){ flash('הטופס כבר ריק'); return; }
-  resetUndo = {st: collectState(), cloud: cloudCur, saved: cloudSaved};
+  resetUndo = {st: collectState(true), cloud: cloudCur, saved: cloudSaved};
   restoreState({});
   setCloudCur(null); polishUndo = null;
   ['imPaste', 'imExtra', 'imFiles'].forEach(id => { if ($(id)) $(id).value = ''; });
@@ -1855,7 +1885,7 @@ async function draftAction(act){
     const p1 = $('dPass').value, p2 = $('dPass2').value;
     if (p1.length < 6) return msg('הסיסמה צריכה להיות לפחות 6 תווים.');
     if (p1 !== p2) return msg('שתי הסיסמאות לא זהות.');
-    const data = await encryptJson(collectState(), p1);
+    const data = await encryptJson(collectState(true), p1);
     const d = new Date(), pad = n => String(n).padStart(2, '0');
     const name = 'טיוטת_דוח_' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + '_' + pad(d.getHours()) + pad(d.getMinutes()) + '.otdraft';
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([data], {type:'application/octet-stream'})); a.download = name;
@@ -1906,7 +1936,7 @@ function cloudQuickSave(){
   if (cloudNotReady()) return;
   gSignIn().then(async () => {
     flash('שומר בענן...');
-    try { await gUpdate(cloudCur.id, await gEncrypt(collectState())); }
+    try { await gUpdate(cloudCur.id, await gEncrypt(collectState(true))); }
     catch(e){ return flash(e.show ? e.message : 'השמירה נכשלה: ' + e.message); }
     setCloudCur(cloudCur); flash('הטיוטה "' + draftLabel(cloudCur.name) + '" עודכנה בענן'); syncPhrases();
   }, e => flash(e.message));
@@ -2040,7 +2070,7 @@ async function cloudSaveGo(){
   if (!upd && !label) return cMsg('צריך לתת לטיוטה כינוי, כדי לזהות אותה ברשימה.');
   cBusy(true); $('dMsg').innerHTML = '<p class="msg">שומר...</p>';
   try {
-    const data = await gEncrypt(collectState());
+    const data = await gEncrypt(collectState(true));
     if (upd) await gUpdate(cloudCur.id, data);
     else { const f = await gCreate(label + '.otdraft', data); cloudCur = {id: f.id, name: f.name}; }
   } catch(e){ cBusy(false); return cMsg(e.show ? e.message : 'השמירה נכשלה: ' + e.message); }
@@ -2426,7 +2456,7 @@ async function importRead(){
     catch(e){ errs.push(f.name + ': ' + e.message); }
   }
   if (val('imPaste')) { parts.push(val('imPaste')); importSources.push('טקסט מודבק'); }
-  importRaw = parts.join('\n\n');
+  importRaw = parts.join('\n\n'); extractItems = []; $('imReview').innerHTML = '';
   $('imErr').innerHTML = errs.map(e => '<div class="warnbox">' + esc(e) + '</div>').join('');
   if (!importRaw.trim()){ $('imPreview').innerHTML = '<span class="msg">לא נקרא טקסט.</span>'; importRes = null; return; }
   importDeid();
@@ -2526,40 +2556,89 @@ function setCtl(id, value){
 }
 
 // ---- שליפה בעזרת Claude (הטקסט נשלח רק אחרי הסרת פרטים מזהים) ----
-const EXTRACT_SECTIONS = ['s_bg', 's_rep'];
-const EXTRACT_SKIP = ['tools'];
-function extractSchema(){
+// ---- שליפה וניתוח בעזרת Claude ----
+// שני סוגי טקסט: "מסמכים קודמים" ממלאים רקע ודיווחים; "הרשמים שלי מהאבחון הנוכחי" ממלאים גם ממצאים,
+// ציונים ותצפיות. ממצאים לעולם לא נלקחים ממסמכים קודמים, כדי שהדוח יתאר רק את מה שנצפה עכשיו.
+const EXTRACT_MODEL = 'claude-opus-5-5';
+const EXTRACT_MAX = 100000;           // תווים שנשלחים בשליפה אחת
+const PREV_TOOLS = ['q_par', 'q_gan', 'q_teach', 'talk'];   // מה שאפשר ללמוד ממסמכים על אמצעי ההערכה הנוכחיים
+let importMode = 'prev';              // 'prev' | 'notes'
+let extractItems = [];                // הצעות שממתינות לאישור
+function extractSchema(mode){
+  mode = mode || importMode;
   const sc = {};
-  function walk(it){
-    if (it.type === 'row'){ it.items.forEach(walk); return; }
-    if (!it.id || EXTRACT_SKIP.includes(it.id)) return;
-    if (it.type === 'select') sc[it.id] = {type:'select', label:it.label || '', options:Object.fromEntries(it.opts.filter(o => o[0]).map(o => [o[0], o[1]]))};
-    else if (it.type === 'chips') sc[it.id] = {type:'multi', label:it.label || '', options:Object.fromEntries(it.opts.map(o => [o[0], o[1]]))};
-    else if (it.type === 'number') sc[it.id] = {type:'number', label:it.label};
-    else if (it.type === 'text' || it.type === 'textarea') sc[it.id] = {type:'text', label:it.label};
+  const opts = it => Object.fromEntries(it.opts.filter(o => o[0]).map(o => [o[0], o[1]]));
+  const lv = levels => Object.fromEntries(levels.filter(l => l[0]).map(l => [l[0], l[1]]));
+  function walk(it, card){
+    if (it.type === 'row') return it.items.forEach(x => walk(x, card));
+    const L = t => card + (t ? ' - ' + t : '');
+    if (it.id === 'tools'){
+      const o = opts(it); if (mode === 'prev') Object.keys(o).forEach(k => { if (!PREV_TOOLS.includes(k)) delete o[k]; });
+      sc.tools = {type: 'multi', label: L(it.label), options: o}; return;
+    }
+    if (it.type === 'select') sc[it.id] = {type: 'select', label: L(it.label), options: opts(it)};
+    else if (it.type === 'chips') sc[it.id] = {type: 'multi', label: L(it.label), options: opts(it)};
+    else if (it.type === 'number') sc[it.id] = {type: 'number', label: L(it.label)};
+    else if (it.type === 'text' || it.type === 'textarea') sc[it.id] = {type: 'text', label: L(it.label)};
     else if (it.type === 'sensory') SENS_MOD.forEach(m => {
-      sc['ps_' + m[0]] = {type:'select', label:'דיווח חושי - ' + m[1], options:{none:'ללא רגישות', sens:'רגישות', seek:'חיפוש תחושה'}};
-      sc['psn_' + m[0]] = {type:'text', label:'פירוט חושי - ' + m[1]};
+      sc['ps_' + m[0]] = {type: 'select', label: L('דיווח חושי - ' + m[1]), options: {none: 'ללא רגישות', sens: 'רגישות', seek: 'חיפוש תחושה'}};
+      sc['psn_' + m[0]] = {type: 'text', label: L('פירוט חושי - ' + m[1])};
+    });
+    else if (it.type === 'scores') it.rows.forEach(r => {
+      sc[it.id + '_' + r[0] + '_p'] = {type: 'number', label: L(it.label.replace(/\s*\(.*\)$/, '') + ' - ' + r[1] + ' - אחוזון'), min: 0, max: 100};
+      if (!it.noStd) sc[it.id + '_' + r[0] + '_s'] = {type: 'number', label: L(it.label.replace(/\s*\(.*\)$/, '') + ' - ' + r[1] + ' - ציון תקן'), min: 20, max: 180};
+    });
+    else if (it.type === 'ayres') AYRES_ITEMS.forEach(r => { sc['ay_' + r[0]] = {type: 'select', label: L('איירס - ' + r[1]), options: lv(AYRES_LEVELS)}; });
+    else if (it.type === 'sp2') SP2_QUADS.concat(SP2_SECTIONS, SP2_BEH).forEach(r => {
+      const pre = SP2_QUADS.includes(r) ? 'sq_' : SP2_SECTIONS.includes(r) ? 'ss_' : 'sb_';
+      sc[pre + r[0]] = {type: 'select', label: L('פרופיל חושי - ' + r[1]), options: lv(SP2_LEVELS)};
     });
   }
-  SECTIONS.filter(s => EXTRACT_SECTIONS.includes(s.id)).forEach(s => s.cards.forEach(c => c.items.forEach(walk)));
-  // מתוך שלב המטרות רק "השפעה על התפקוד": דוחות ושאלונים מתארים אותה לעיתים קרובות
-  sc.impact = {type:'text', label:'השפעה של הקשיים על התפקוד וההשתתפות בבית ובמסגרת'};
+  const secs = mode === 'notes' ? ['s_bg', 's_rep', 's_find'] : ['s_bg', 's_rep'];
+  SECTIONS.filter(x => secs.includes(x.id)).forEach(x => x.cards.forEach(c => c.items.forEach(it => walk(it, c.title))));
+  sc.impact = {type: 'text', label: 'השפעה של הקשיים על התפקוד וההשתתפות בבית ובמסגרת'};
   return sc;
 }
-const EXTRACT_GUIDE = `אתה עוזר למרפאה בעיסוק במכון להתפתחות הילד בישראל. קיבלת טקסט ממסמכים על ילד שמגיע לאבחון (שאלונים, דוחות קודמים, סיכומי שיחה), ורשימת שדות של טופס.
-המשימה: לחלץ מהטקסט את המידע שמתאים לשדות, ולהחזיר JSON.
+// מבנה התשובה: רשימת פריטים, כל אחד עם שדה, ערך וציטוט מהטקסט (structured outputs)
+const EXTRACT_FORMAT = {type: 'json_schema', schema: {type: 'object', additionalProperties: false, required: ['items'], properties: {
+  items: {type: 'array', items: {type: 'object', additionalProperties: false, required: ['field', 'value', 'quote'],
+    properties: {field: {type: 'string'}, value: {type: 'string'}, quote: {type: 'string'}}}}}}};
+const EXTRACT_GUIDE = `אתה עוזר למרפאה בעיסוק במכון להתפתחות הילד בישראל. קיבלת טקסט ורשימת שדות של טופס דוח אבחון.
+המשימה: לחלץ מהטקסט את המידע שמתאים לשדות. לכל ערך מצרפים ציטוט מדויק מהטקסט שעליו הוא מבוסס, כדי שהמאבחנת תוכל לאשר אותו.
 
 כללי ברזל:
 1. רק מידע שכתוב במפורש בטקסט. אסור להסיק, לנחש או להשלים. אם אין מידע לשדה, אל תכלול אותו.
-2. בשדה מסוג select: החזר מפתח אחד מתוך options. בשדה מסוג multi: מערך של מפתחות מתוך options. בשדה number: מספר בלבד.
-3. בשדה מסוג text: משפט או כמה משפטים קצרים בעברית, בגוף שלישי ובסגנון קליני. פרטים שאין להם אפשרות מתאימה ב-options נכנסים לשדות ההערות (bgNote, prevTx, famNote, parNote, schNote).
-4. תגיות כמו [שם], [שם2], [שם משפחה], [תאריך], [יישוב], [הוסר] הן פרטים שהוסרו. העתק אותן כמו שהן, ואל תנסה לשחזר אותן.
-5. שדה ref הוא הגורם שהפנה לאבחון הנוכחי. reasons הן סיבות ההפניה.
-6. מידע על אבחונים וטיפולים קודמים (פיזיותרפיה, קלינאית תקשורת, רופא התפתחותי) נכנס ל-prevTx בתמצית, כולל המלצות שניתנו.
-7. שדה impact: איך הקשיים משפיעים על היומיום בבית ובמסגרת (למשל לבוש, אכילה, השתתפות בגן), רק אם זה כתוב במפורש.
+2. כל פריט: field = מזהה השדה, value = הערך, quote = קטע שמועתק מילה במילה מהטקסט (עד 30 מילים) ומבסס את הערך. בלי ציטוט מדויק, אל תכלול את הפריט.
+3. בשדה select: value הוא מפתח אחד מתוך options. בשדה multi: פריט נפרד לכל מפתח מתוך options. בשדה number: ספרות בלבד, בדיוק כמו בטקסט.
+4. בשדה text: משפט או כמה משפטים קצרים בעברית, בגוף שלישי ובסגנון קליני. פרטים שאין להם אפשרות מתאימה ב-options נכנסים לשדות ההערות של אותו כרטיס.
+5. זהה את החלקים בטקסט לפי התוכן, גם כשהכותרות שונות מהטופס או חסרות.
+6. תגיות כמו [שם], [שם2], [שם משפחה], [תאריך], [יישוב], [הוסר] הן פרטים שהוסרו. העתק אותן כמו שהן, ואל תנסה לשחזר אותן.
+7. שדה ref הוא הגורם שהפנה לאבחון הנוכחי. reasons הן סיבות ההפניה. impact: איך הקשיים משפיעים על היומיום בבית ובמסגרת.
 
-החזר אך ורק אובייקט JSON תקין שהמפתחות שלו הם מזהי השדות, בלי טקסט נוסף.`;
+החזר אך ורק אובייקט JSON תקין במבנה {"items":[{"field":"...","value":"...","quote":"..."}]}, בלי טקסט נוסף.`;
+const EXTRACT_MODE_GUIDE = {
+  prev: 'סוג הטקסט: מסמכים קודמים (שאלונים, דוחות של אבחונים קודמים, סיכומי שיחה). מלא רקע, דיווחים, טיפולים קודמים (prevTx, כולל המלצות שניתנו) ואמצעי הערכה מהסוג שמופיע ב-options. אין לך שדות ממצאים: ממצאים מאבחון קודם נכנסים בתמצית ל-prevTx.',
+  notes: 'סוג הטקסט: הרשמים של המאבחנת מהאבחון הנוכחי (תצפיות, ציונים, דיווחים). מלא גם את הממצאים, הציונים והתצפיות של האבחון הנוכחי, ואת אמצעי ההערכה שבוצעו בו.',
+};
+// מנרמל לצורך השוואת ציטוט: רווחים, מרכאות וגרשיים
+const normQ = t => DEID.normalize(t).replace(/\s+/g, ' ').trim();
+// מסנן ומאמת את ההצעות: שדה קיים, ערך חוקי, ציטוט שבאמת מופיע בטקסט שנשלח
+function checkItems(raw, sc, sent){
+  const textN = normQ(sent), seen = new Set(), out = [];
+  (raw || []).forEach(x => {
+    if (!x || !sc[x.field]) return;
+    const f = sc[x.field], v = String(x.value == null ? '' : x.value).trim(); if (!v) return;
+    if ((f.type === 'select' || f.type === 'multi') && !(v in f.options)) return;
+    if (f.type === 'number'){ const n = Number(v.replace(',', '.')); if (!isFinite(n) || (f.min != null && (n < f.min || n > f.max))) return; }
+    const key = x.field + '=' + v; if (seen.has(key)) return; seen.add(key);
+    const quote = String(x.quote || '').trim(), qok = quote.length >= 2 && textN.includes(normQ(quote));
+    const el = $(x.field), chip = f.type === 'multi' && chipInput(x.field, v);
+    if (chip && chip.checked) return;   // כבר מסומן
+    const filled = !chip && el && (el.tagName === 'SELECT' || el.tagName === 'INPUT') && el.value.trim() !== '';
+    out.push({field: x.field, value: v, quote, qok, filled, label: f.label, shown: f.options ? f.options[v] : v});
+  });
+  return out;
+}
 
 async function extractWithClaude(){
   const text = importOutgoing();
@@ -2567,22 +2646,60 @@ async function extractWithClaude(){
   // בדיקת ביטחון: שמות שהוזנו לא אמורים להופיע במה שנשלח
   const leak = nameList().find(x => new RegExp('(?<![\\u05D0-\\u05EA])' + escRe(x.name) + '(?![\\u05D0-\\u05EA])').test(text));
   if (leak){ $('imStatus').innerHTML = '<div class="warnbox">השליפה בוטלה: נמצא שם בטקסט שעמד להישלח.</div>'; return; }
-  const MAX = 40000;
-  const body = text.length > MAX ? text.slice(0, MAX) : text;
-  const user = 'מגדר: ' + (val('gender') === 'f' ? 'בת' : 'בן') + '.\n\nהשדות האפשריים:\n' + JSON.stringify(extractSchema()) + '\n\nהטקסט מהמסמכים:\n' + body;
+  const body = text.length > EXTRACT_MAX ? text.slice(0, EXTRACT_MAX) : text;
+  const sc = extractSchema();
+  const user = 'מגדר: ' + (val('gender') === 'f' ? 'בת' : 'בן') + '.\n' + EXTRACT_MODE_GUIDE[importMode] + '\n\nהשדות האפשריים:\n' + JSON.stringify(sc) + '\n\nהטקסט:\n' + body;
   if (!apiKey){ openKeyPanel(extractWithClaude); return; }
-  if (!(await confirmSend('שליפה בעזרת Claude', user.split('\n')[0] + '\n\n' + body))) return;
-  const btn = $('imExtract'); btn.disabled = true; btn.textContent = 'שולף...';
+  if (!(await confirmSend('שליפה וניתוח בעזרת Claude', user.split('\n').slice(0, 2).join('\n') + '\n\n' + body))) return;
+  const btn = $('imExtract'); btn.disabled = true; btn.textContent = 'מנתח...';
+  const prog = n => { btn.textContent = 'מנתח... (' + n + ' תווים)'; };
+  const model = load(MODEL_STORE) || EXTRACT_MODEL;
   try {
-    const obj = parseJsonReply(await callClaude(EXTRACT_GUIDE, user, n => { btn.textContent = 'שולף... (' + n + ' תווים)'; }));
-    const sc = extractSchema();
-    let n = 0;
-    Object.keys(obj).forEach(k => { if (sc[k] && setCtl(k, obj[k])) n++; });
-    update();
-    $('imStatus').innerHTML = '<div class="okbox">מולאו ' + n + ' שדות (מסומנים במסגרת).' + (text.length > MAX ? ' הטקסט היה ארוך ונשלח רק חלקו הראשון.' : '') + ' בדקי אותם בלשוניות רקע ודיווחים לפני שממשיכים.</div>';
+    let reply;
+    try { reply = await callClaude(EXTRACT_GUIDE, user, prog, {model, format: EXTRACT_FORMAT}); }
+    catch(e){ if (e.status !== 400) throw e; reply = await callClaude(EXTRACT_GUIDE, user, prog, {model}); }   // בלי structured outputs, אם המודל לא תומך
+    const obj = parseJsonReply(reply);
+    extractItems = checkItems(obj.items, sc, body);
+    renderExtractReview(text.length > EXTRACT_MAX);
   } catch (err){
     $('imStatus').innerHTML = '<div class="warnbox">השליפה נכשלה: ' + esc(err.message) + ' אפשר להשתמש ב"מילוי לפי כותרות".</div>';
-  } finally { btn.disabled = false; btn.textContent = 'שליפה אוטומטית בעזרת Claude'; }
+  } finally { btn.disabled = false; btn.textContent = 'שליפה וניתוח בעזרת Claude'; }
+}
+// רשימת ההצעות לאישור: כל פריט עם הציטוט שלו. ציטוט שלא נמצא בטקסט או שדה שכבר מולא לא מסומנים מראש.
+function renderExtractReview(truncated){
+  const items = extractItems;
+  if (!items.length){ $('imReview').innerHTML = ''; $('imStatus').innerHTML = '<div class="warnbox">Claude לא מצא בטקסט מידע שמתאים לשדות הטופס.</div>'; return; }
+  $('imStatus').innerHTML = truncated ? '<div class="warnbox">הטקסט היה ארוך מ-' + EXTRACT_MAX.toLocaleString() + ' תווים, ונותח רק חלקו הראשון.</div>' : '';
+  $('imReview').innerHTML = '<div class="card rvcard"><h3>הצעות לאישור (' + items.length + ')</h3>' +
+    '<p class="hint">רק מה שמסומן ייכנס לטופס. שדות שכבר מילאת לא משתנים.</p>' +
+    '<div class="mrow" style="margin:0 0 10px"><button type="button" class="btn small" data-rv="all">סימון הכול</button><button type="button" class="btn small" data-rv="none">ניקוי הכול</button></div>' +
+    '<ul class="rvlist">' + items.map((x, i) => '<li class="' + (x.qok ? '' : 'noq') + '"><label><input type="checkbox" data-rvi="' + i + '"' + (x.qok && !x.filled ? ' checked' : '') + (x.filled ? ' disabled' : '') + '>' +
+      '<span><b>' + esc(x.label) + ':</b> ' + esc(x.shown) + (x.filled ? ' <span class="rvnote">(כבר מולא, לא ישתנה)</span>' : '') +
+      '<span class="rvq">' + (x.qok ? '«' + esc(x.quote) + '»' : '⚠ הציטוט לא נמצא בטקסט: «' + esc(x.quote) + '»') + '</span></span></label></li>').join('') + '</ul>' +
+    '<div class="mrow"><button type="button" class="btn primary" data-rv="apply">החלת הפריטים שסומנו</button><button type="button" class="btn ghost" data-rv="cancel">ביטול</button></div></div>';
+}
+function applyExtract(){
+  const chosen = [...document.querySelectorAll('#imReview [data-rvi]:checked')].map(i => extractItems[+i.dataset.rvi]);
+  let n = 0;
+  chosen.forEach(x => { if (setCtl(x.field, x.value)) n++; if (/^beery_.*_s$/.test(x.field)) autoPct(x.field.slice(0, -2)); });
+  update(); saveSession();
+  extractItems = [];
+  // מטרות: לפי הממצאים שאושרו, במנגנון ההצעות הקיים
+  const sugg = suggestGoals().filter(x => !goalOrder.includes(x.k));
+  $('imReview').innerHTML = sugg.length ? '<div class="card rvcard"><h3>מטרות מוצעות לפי הממצאים</h3><ul class="rvlist">' +
+    sugg.map(x => '<li><label><input type="checkbox" data-goal="' + x.k + '" checked><span><b>' + esc(goalTitle(x.k)) + '</b><span class="rvq">' + esc(x.why.join(', ')) + '</span></span></label></li>').join('') +
+    '</ul><div class="mrow"><button type="button" class="btn primary" data-rv="goals">הוספת המטרות שסומנו</button><button type="button" class="btn ghost" data-rv="cancel">דילוג</button></div></div>' : '';
+  $('imStatus').innerHTML = '<div class="okbox">מולאו ' + n + ' פריטים (מסומנים במסגרת). כדאי לעבור עליהם בשלבים הבאים.</div>';
+}
+function reviewAction(a){
+  if (a === 'all' || a === 'none') document.querySelectorAll('#imReview [data-rvi]:not(:disabled)').forEach(i => i.checked = a === 'all');
+  else if (a === 'apply') applyExtract();
+  else if (a === 'cancel'){ $('imReview').innerHTML = ''; extractItems = []; }
+  else if (a === 'goals'){
+    const ks = [...document.querySelectorAll('#imReview [data-goal]:checked')].map(i => i.dataset.goal);
+    ks.forEach(addGoal); update(); saveSession(); $('imReview').innerHTML = '';
+    $('imStatus').innerHTML += '<div class="okbox">נוספו ' + ks.length + ' מטרות. אפשר לסדר ולערוך אותן בשלב המטרות.</div>';
+  }
 }
 
 // =====================================================================
@@ -2940,6 +3057,8 @@ styleSync();
 $('imRead').addEventListener('click', importRead);
 $('imHeads').addEventListener('click', fillByHeadings);
 $('imExtract').addEventListener('click', extractWithClaude);
+document.querySelectorAll('[name="imMode"]').forEach(r => r.addEventListener('change', e => { importMode = e.target.value; extractItems = []; $('imReview').innerHTML = ''; }));
+$('imReview').addEventListener('click', e => { const a = e.target.getAttribute && e.target.getAttribute('data-rv'); if (a) reviewAction(a); });
 $('imExtra').addEventListener('change', importDeid);
 // "הסרה" של שם משפחה שזוהה: נכנס לשדה שם המשפחה (או לרשימת ההסרה אם השדה כבר מלא)
 $('imInfo').addEventListener('click', e => {
