@@ -243,6 +243,12 @@ input[data-auto="1"]{background:var(--green-soft);color:var(--green-ink);font-we
   *,*::before,*::after{animation:none!important;transition:none!important}
 }
 
+/* מסך נעילה אחרי חוסר פעילות */
+#lock{position:fixed;inset:0;z-index:80;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:16px}
+#lock[hidden]{display:none}
+#lock .lockbox{max-width:420px;text-align:center}
+#lock h2{color:var(--blue-dark);margin:0 0 8px}
+
 /* ---- הדפסה / PDF: רק הדוח עצמו ---- */
 #printArea{display:none}
 @media print{
@@ -290,6 +296,11 @@ input[data-auto="1"]{background:var(--green-soft);color:var(--green-ink);font-we
 <main id="pages"></main>
 
 <div id="printArea" aria-hidden="true"></div>
+<div id="lock" hidden role="dialog" aria-modal="true" aria-labelledby="lockTitle">
+  <div class="lockbox"><h2 id="lockTitle">המסך ננעל</h2>
+    <p>אחרי 15 דקות בלי פעילות הטופס הוסתר, כדי שפרטי המטופל לא יישארו גלויים על המסך. שום דבר לא נמחק.</p>
+    <button type="button" class="btn cta" id="unlock">המשך עבודה</button></div>
+</div>
 <div id="modalWrap" hidden><div id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"></div></div>
 
 <script>
@@ -971,7 +982,8 @@ function suggestGoals(){
   add('attn', label('beh', ['attShort','dist','move','interest','instrMed']));
   // MAP: מדד בטווח הצהוב או האדום (אחוזון 25 ומטה)
   const mapLow = id => { const v = pctOf('map_' + id + '_p'); return v !== null && v <= 25 ? ['MAP: ' + MAP_IDX.find(r => r[0] === id)[1]] : []; };
-  add('base', label('fm', ['midNo','sep','bilat']).concat(label('gm', ['posture','bilat','clumsy']), mapLow('found'), mapLow('coord')));
+  const aySig = AYRES_ITEMS.filter(r => val('ay_' + r[0]) === 'sig').map(r => 'איירס: ' + r[1].replace(/\s*\(.*\)$/, ''));
+  add('base', label('fm', ['midNo','sep','bilat']).concat(label('gm', ['posture','bilat','clumsy','fatigue']), aySig, mapLow('found'), mapLow('coord')));
   const g = [];
   if (['fist','palmar','digital','effort'].includes(val('grip'))) g.push('אחיזה: ' + OPT.grip[val('grip')].label);
   if (['no','pref'].includes(val('dom'))) g.push('דומיננטיות לא מבוססת');
@@ -987,8 +999,8 @@ function suggestGoals(){
   if (['explore','func'].includes(val('playStage')) && (a === null || a >= 2.5)) pl.push('שלב משחק: ' + OPT.playStage[val('playStage')].label);
   add('play', pl);
   if (isToddler() && (['rare','incons'].includes(val('eye')) || chips('joint').length)) add('inter', [chips('joint').length ? 'אבחון משותף' : 'קשר עין']);
-  add('adl', label('reasons', ['adl']));
-  add('plan', label('fm', ['plan']).concat(mapLow('complex')));
+  add('adl', label('reasons', ['adl']).concat(chips('parGen').includes('fmdiff') ? ['דיווח ההורים: שרוכים, רוכסן, כפתורים'] : []));
+  add('plan', label('fm', ['plan']).concat(label('gm', ['nojump','gait','conf','stairsFear']), mapLow('complex')));
   const w = label('wr', ['seqNo','orgNo','legNo','press','fatigue']);
   ['copyS','dictS'].forEach(id => { if (['bitlow','low'].includes(val(id))) w.push((id === 'copyS' ? 'קצב העתקה ' : 'קצב הכתבה ') + OPT[id][val(id)].label); });
   add('write', w);
@@ -1455,11 +1467,16 @@ function nameList(){
 }
 function showNames(t){ nameList().forEach(x => { t = t.split(x.token).join(x.name); }); return t; }
 function escRe(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
-function hideNames(t){
+// מחליף רק את השמות בתגיות ([שם], [שם משפחה]...). hideNames מסיר בנוסף גם תאריכים, טלפונים וכו'.
+function tokenizeNames(t){
   nameList().sort((a,b) => b.name.length - a.name.length).forEach(x => {
     const re = new RegExp('(?<![\\u05D0-\\u05EA])([ובלמהשכ]{0,3})' + escRe(x.name) + '(?![\\u05D0-\\u05EA])', 'g');
     t = t.replace(re, (m, p) => p + x.token);
   });
+  return t;
+}
+function hideNames(t){
+  t = tokenizeNames(t);
   // ביטחון נוסף: תאריכים, טלפונים, מספרי זהות ומיילים
   t = t.replace(/[\w.+\-]+@[\w\-]+(\.[\w\-]+)+/g, '[מייל]')
        .replace(/(?<!\d)(?:\+972[\-\s]?|0)(?:5\d|7\d|[23489])[\-\s]?\d{3}[\-\s]?\d{4}(?!\d)/g, '[טלפון]')
@@ -1501,6 +1518,7 @@ function update(){
   FIELDS.forEach(f => {
     const k = f[0], ta = $('o_' + k);
     if (!dirty[k]) ta.value = showNames(B[k]() || '');
+    else if (/\[שם/.test(ta.value)){ const v = showNames(ta.value); if (v !== ta.value) ta.value = v; }   // שם שהוקלד אחרי שחזור
     $('of_' + k).classList.toggle('empty', !ta.value.trim());
     markField(k); autoSize(ta);
   });
@@ -1733,10 +1751,14 @@ const SAVED_STEP = (() => { try { return +sessionStorage.getItem(SESSION_STORE +
 function saveSession(){
   clearTimeout(saveSessionSoon.t);
   try {
-    if (hasContent()) sessionStorage.setItem(SESSION_STORE, JSON.stringify(collectState()));
+    // השמות לא נשמרים כאן: השמירה האוטומטית אינה מוצפנת. מקלידים אותם שוב אחרי רענון.
+    const st = collectState(); SESSION_SKIP.forEach(k => delete st.ctl[k]);
+    Object.values(st.out).forEach(o => { o.t = tokenizeNames(o.t); });   // גם בשדות שנערכו: תגיות במקום שמות
+    if (hasContent()) sessionStorage.setItem(SESSION_STORE, JSON.stringify(st));
     else sessionStorage.removeItem(SESSION_STORE);
   } catch(e){}
 }
+const SESSION_SKIP = ['name', 'surname', 'names2'];
 function saveSessionSoon(){ clearTimeout(saveSessionSoon.t); saveSessionSoon.t = setTimeout(saveSession, 600); }
 function restoreSession(){
   let st = null;
@@ -1744,7 +1766,7 @@ function restoreSession(){
   if (!st || st.v !== 1) return false;
   try { restoreState(st); } catch(e){ return false; }
   goStep(SAVED_STEP);
-  flash('הטופס שוחזר מהשמירה האוטומטית');
+  flash('הטופס שוחזר. מטעמי פרטיות השם לא נשמר, וצריך להקליד אותו שוב בשלב הפתיחה.');
   return true;
 }
 
@@ -2069,7 +2091,18 @@ function cloudAction(a, el){
   }
 }
 
-function parseJsonReply(t){ const m = t.match(/\{[\s\S]*\}/); return JSON.parse(m ? m[0] : t); }
+// מחלץ את אובייקט ה-JSON מתשובת Claude: גם כשהוא עטוף ב-```json או בטקסט, וגם כשיש בו שבירת שורה
+// גולמית בתוך מחרוזת. אם אין JSON תקין נזרקת שגיאה עם הסבר, ואף שדה לא משתנה.
+function parseJsonReply(t){
+  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i), src = fence ? fence[1] : t;
+  const a = src.indexOf('{'), z = src.lastIndexOf('}');
+  if (a < 0 || z <= a) throw new Error('Claude לא החזיר תשובה במבנה הצפוי.');
+  const slice = src.slice(a, z + 1);
+  const ok = v => { if (!v || typeof v !== 'object' || Array.isArray(v)) throw 0; return v; };
+  try { return ok(JSON.parse(slice)); } catch(e){}
+  try { return ok(JSON.parse(slice.replace(/"(?:[^"\\]|\\.)*"/g, m => m.replace(/\r?\n/g, '\\n')))); }
+  catch(e){ throw new Error('התשובה של Claude לא הייתה במבנה תקין (JSON).'); }
+}
 function fieldTitle(k){ const f = FIELDS.find(x => x[0] === k); return f ? f[1] : k; }
 
 const STYLE_GUIDE = `אתה עוזר למרפאה בעיסוק במכון להתפתחות הילד בישראל לנסח שדות של דוח סיכום אבחון שמוזן למערכת Cliks.
@@ -2217,10 +2250,9 @@ var MONTHS = 'ינואר|פברואר|מרץ|מרס|אפריל|מאי|יוני|�
 
 var CAT_LABELS = {child:'שם המטופל',family:'שם משפחה',relatives:'בני משפחה',places:'מקומות',insts:'מוסדות',extra:'אחר',labels:'שדות מזוהים',dates:'תאריכים',phones:'טלפונים',ids:'מספרי זהות',emails:'מיילים',address:'כתובות',cities:'יישובים',doctors:'רופאים',kupa:'קופות חולים'};
 
-function esc(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function normalize(s){ return (s||'').replace(/[״“”„]/g,'"').replace(/[׳‘’`]/g,"'").replace(/\r\n?/g,'\n').replace(/ /g,' '); }
 function termPattern(term){
-  var p = esc(normalize(term).trim());
+  var p = escRe(normalize(term).trim());
   p = p.replace(/קרית/g,'קרי?ית').replace(/תקווה/g,'תקו?וה');
   p = p.replace(/[\s\-]+/g,'[\\s\\-]+');
   return p;
@@ -2315,7 +2347,7 @@ function surnameCandidates(text){
   re = /\[שם\]\s+([א-ת][א-ת"'\-]{1,})/g;
   while ((m = re.exec(text))){
     var w = m[1];
-    if (SURNAME_STOP.indexOf(w) < 0 && FLAG_STOP.indexOf(w) < 0 && (text.match(new RegExp('(?<![א-ת])' + esc(w) + '(?![א-ת])', 'g')) || []).length >= 3) c[w] = true;
+    if (SURNAME_STOP.indexOf(w) < 0 && FLAG_STOP.indexOf(w) < 0 && (text.match(new RegExp('(?<![א-ת])' + escRe(w) + '(?![א-ת])', 'g')) || []).length >= 3) c[w] = true;
   }
   return Object.keys(c);
 }
@@ -2658,9 +2690,9 @@ function addMics(root){
     const w = document.createElement('span'); w.className = 'mic-wrap';
     ta.parentNode.insertBefore(w, ta); w.appendChild(ta);
     const b = document.createElement('button'); b.type = 'button'; b.className = 'mic';
-    b.title = 'הכתבה קולית (אמרי "נקודה", "פסיק", "שורה חדשה" לסימני פיסוק)'; b.setAttribute('aria-label', 'הכתבה קולית');
+    b.title = 'הכתבה קולית (אמרי "נקודה", "פסיק", "שורה חדשה" לסימני פיסוק). ההקלטה מעובדת בשרתים של ספק הדפדפן: לא לומר שמות.'; b.setAttribute('aria-label', 'הכתבה קולית');
     b.innerHTML = MIC_SVG; w.appendChild(b);
-    b.addEventListener('click', () => toggleDict(ta, b));
+    b.addEventListener('click', () => dictConsent(() => toggleDict(ta, b)));
   });
 }
 function dictPunct(t){
@@ -2684,6 +2716,15 @@ function stopDict(){
   dict.on = false; dict.btn.classList.remove('on');
   try { dict.rec.stop(); } catch(e){}
   dict = null;
+}
+// לפני ההכתבה הראשונה: הסבר שההקלטה יוצאת מהמכשיר (ב-Chrome לשרתי Google), ולכן לא לומר שמות
+const DICT_OK_STORE = 'ot_form_dict_ok_v1';
+function dictConsent(go){
+  if (load(DICT_OK_STORE) || (dict && dict.on)) return go();
+  openModal('<h3>לפני ההכתבה הקולית</h3><p>ההקלטה לא מעובדת במכשיר: הדפדפן שולח אותה לזיהוי בשרתים של הספק שלו (ב-Chrome לשרתי Google). ' +
+    'לכן <b>לא לומר בהכתבה שמות או פרטים מזהים</b>. הסרת הפרטים המזהים של הטופס פועלת רק על הטקסט, אחרי שההקלטה כבר נשלחה.</p>' +
+    '<div class="mrow"><button class="btn primary" data-dict="ok">הבנתי, להתחיל</button><button class="btn" data-dict="no">ביטול</button></div>');
+  dictConsent.go = go;
 }
 function toggleDict(ta, btn){
   const same = dict && dict.ta === ta;
@@ -2799,6 +2840,19 @@ function phraseAction(a, el){
 // =====================================================================
 //  כללי
 // =====================================================================
+// ---- נעילה אחרי חוסר פעילות: מסתירה את הטופס (לא מוחקת), כשיש בו תוכן ----
+let IDLE_MS = 15 * 60 * 1000, lastActive = Date.now();
+function lockScreen(){
+  if (!$('lock').hidden || !hasContent()) return;
+  stopDict();
+  $('lock').hidden = false; document.querySelectorAll('.topwrap, #pages, #modalWrap').forEach(el => el.inert = true);
+  $('unlock').focus();
+}
+function unlockScreen(){
+  $('lock').hidden = true; document.querySelectorAll('.topwrap, #pages, #modalWrap').forEach(el => el.inert = false);
+  lastActive = Date.now();
+}
+function idleCheck(){ if (Date.now() - lastActive >= IDLE_MS) lockScreen(); }
 function flash(s){ $('msg').textContent = s; clearTimeout(flash.t); flash.t = setTimeout(() => $('msg').textContent = '', 2500); }
 // הודעה עם כפתור פעולה (למשל ביטול), שנשארת זמן ארוך יותר
 function flashAction(s, label, fn){
@@ -2852,12 +2906,17 @@ $('modal').addEventListener('change', e => {
   $('cNew').hidden = e.target.checked;
 });
 $('modal').addEventListener('click', e => { const a = e.target.getAttribute && e.target.getAttribute('data-d'); if (a) draftAction(a); });
+$('modal').addEventListener('click', e => {
+  const a = e.target.getAttribute && e.target.getAttribute('data-dict'); if (!a) return;
+  const go = dictConsent.go; dictConsent.go = null; closeModal();
+  if (a === 'ok'){ store(DICT_OK_STORE, '1'); if (go) go(); }
+});
 $('modal').addEventListener('click', e => { const a = e.target.getAttribute && e.target.getAttribute('data-k'); if (a) keyAction(a); });
 $('modal').addEventListener('keydown', e => {
   if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
   const b = $('modal').querySelector('[data-k="unlock"],[data-k="save"],[data-d="save"],[data-d="open"],[data-c="save"],[data-p="add"],[data-p="mesave"]'); if (b){ e.preventDefault(); b.click(); }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modalWrap').hidden){ const no = $('modal').querySelector('[data-send="no"],[data-k="close"],[data-d="close"],[data-c="close"],[data-p="close"]'); if (no) no.click(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modalWrap').hidden){ const no = $('modal').querySelector('[data-send="no"],[data-k="close"],[data-d="close"],[data-c="close"],[data-p="close"],[data-dict="no"]'); if (no) no.click(); } });
 document.addEventListener('keydown', trapFocus);
 $('modal').addEventListener('click', e => { const el = e.target.closest && e.target.closest('[data-p]'); if (el) phraseAction(el.getAttribute('data-p'), el); });
 $('pages').addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-addph]'); if (b) openAddPhrase(b.getAttribute('data-addph')); });
@@ -2905,6 +2964,10 @@ $('status').addEventListener('click', e => {
 });
 window.addEventListener('beforeunload', e => { saveSession(); if (hasContent()){ e.preventDefault(); e.returnValue = ''; } });
 window.addEventListener('pagehide', saveSession);
+['pointerdown', 'keydown', 'wheel', 'touchstart', 'input'].forEach(ev => document.addEventListener(ev, () => { if ($('lock').hidden) lastActive = Date.now(); }, {passive: true, capture: true}));
+setInterval(idleCheck, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) idleCheck(); });
+$('unlock').addEventListener('click', unlockScreen);
 document.addEventListener('visibilitychange', () => { if (document.hidden) saveSession(); });
 if (!restoreSession()) update();
 // עבודה בלי אינטרנט (רק כשהאתר מוגש מהרשת, לא כקובץ מקומי)

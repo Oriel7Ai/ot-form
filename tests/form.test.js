@@ -133,15 +133,19 @@ test('מטרות מוצעות ובדיקה לפני ייצוא', async b => {
   assert.match(await page.textContent('#checks'), /יש קשיים בלי מטרה מתאימה: השתתפות וקשב/);
 });
 
-test('שמירה אוטומטית משחזרת אחרי רענון', async b => {
+test('שמירה אוטומטית משחזרת אחרי רענון, בלי השמות', async b => {
   const page = await fresh(b);
-  await page.fill('#name', 'נועם');
+  await page.fill('#name', 'נועם'); await page.fill('#surname', 'לוי');
   await tab(page, 's_bg'); await chip(page, 'reasons', 'write');
   await tab(page, 'st_review');
   await page.fill('#o_background', 'טקסט שנערך ביד');
   await page.waitForTimeout(800);
+  // השמות לא נשמרים בשמירה האוטומטית, כי היא לא מוצפנת
+  const raw = await page.evaluate(() => sessionStorage.getItem(SESSION_STORE));
+  assert.ok(!raw.includes('נועם') && !raw.includes('לוי'));
   await page.reload();
-  assert.strictEqual(await page.$eval('#name', el => el.value), 'נועם');
+  assert.strictEqual(await page.$eval('#name', el => el.value), '');
+  assert.match(await page.textContent('#msg'), /השם לא נשמר/);
   assert.strictEqual(await page.$eval('[data-chips="reasons"] input[value="write"]', el => el.checked), true);
   assert.strictEqual(await out(page, 'background'), 'טקסט שנערך ביד');
 });
@@ -565,6 +569,70 @@ test('קשר שסומן [לבדיקה]: הודעה, תג, בדיקה לפני י
   await page.click('#exportWord');
   assert.strictEqual(asked, 1);
   assert.match(await page.evaluate(() => window.__dl), /\.docx$/);
+});
+
+test('שמירה אוטומטית: גם בשדה שנערך ביד השם לא נשמר, וחוזר כשמקלידים אותו', async b => {
+  const page = await fresh(b);
+  await page.fill('#name', 'נועם');
+  await tab(page, 'st_review');
+  await page.fill('#o_background', 'נועם ילד מקסים. עריכה ידנית.');
+  await page.evaluate(() => saveSession());
+  assert.ok(!(await page.evaluate(() => sessionStorage.getItem(SESSION_STORE))).includes('נועם'));
+  await page.reload();
+  assert.strictEqual(await out(page, 'background'), '[שם] ילד מקסים. עריכה ידנית.');
+  await tab(page, 'st_start'); await page.fill('#name', 'נועם');
+  assert.strictEqual(await out(page, 'background'), 'נועם ילד מקסים. עריכה ידנית.');
+});
+
+test('פענוח JSON מ-Claude: עטיפה, שבירת שורה, ושגיאה ברורה', async b => {
+  const page = await fresh(b);
+  const r = await page.evaluate(() => {
+    const t = s => { try { return JSON.stringify(parseJsonReply(s)); } catch(e){ return 'ERR: ' + e.message; } };
+    return [t('הנה:\n```json\n{"a":"x"}\n```'), t('{"a":"שורה 1\nשורה 2"}'), t('מצטער, לא הבנתי'), t('{"a":"משקל 3 ק"ג"}')];
+  });
+  assert.strictEqual(r[0], '{"a":"x"}');
+  assert.strictEqual(r[1], '{"a":"שורה 1\\nשורה 2"}');
+  assert.match(r[2], /^ERR: Claude לא החזיר תשובה במבנה הצפוי/);
+  assert.match(r[3], /^ERR: התשובה של Claude לא הייתה במבנה תקין/);
+});
+
+test('מטרות מוצעות: קשיים במוטוריקה גסה, איירס משמעותי ועצמאות מדיווח ההורים', async b => {
+  const page = await fresh(b);
+  const r = await page.evaluate(() => {
+    chipInput('gm', 'nojump').checked = true; chipInput('gm', 'fatigue').checked = true; $('ay_equil').value = 'sig';
+    chipInput('parGen', 'fmdiff').checked = true; update();
+    return Object.fromEntries(suggestGoals().map(x => [x.k, x.why.join('|')]));
+  });
+  assert.match(r.plan, /לא קופץ/); assert.match(r.base, /מתעייף/); assert.match(r.base, /איירס: תגובות שיווי משקל/);
+  assert.match(r.adl, /דיווח ההורים/);
+});
+
+test('נעילה אחרי חוסר פעילות: מסתירה את הטופס בלי למחוק', async b => {
+  const page = await fresh(b);
+  await page.evaluate(() => { IDLE_MS = 0; idleCheck(); });
+  assert.strictEqual(await page.isVisible('#lock'), false);   // טופס ריק: אין מה להסתיר
+  await page.fill('#name', 'נועם');
+  await page.evaluate(() => { IDLE_MS = 0; idleCheck(); });
+  assert.strictEqual(await page.isVisible('#lock'), true);
+  assert.strictEqual(await page.evaluate(() => $('pages').inert), true);
+  await page.click('#unlock');
+  assert.strictEqual(await page.isVisible('#lock'), false);
+  assert.strictEqual(await page.$eval('#name', e => e.value), 'נועם');
+});
+
+test('הכתבה: הסבר פרטיות לפני השימוש הראשון', async b => {
+  const page = await fresh(b);
+  const has = await page.evaluate(() => !!SR);
+  if (!has) return;   // דפדפן בלי זיהוי דיבור: אין כפתורי מיקרופון
+  await tab(page, 's_bg');
+  await page.evaluate(() => { window.__started = 0; toggleDict = () => { window.__started++; }; });
+  await page.click('#s_bg .mic');
+  assert.match(await page.textContent('#modal'), /לא לומר בהכתבה שמות/);
+  await page.click('[data-dict="ok"]');
+  assert.strictEqual(await page.evaluate(() => window.__started), 1);
+  await page.click('#s_bg .mic');   // בפעם השנייה בלי הסבר
+  assert.strictEqual(await page.evaluate(() => window.__started), 2);
+  assert.strictEqual(await page.isVisible('#modalWrap'), false);
 });
 
 test('פענוח תשובת Claude בהזרמה, כולל מעבר למודל חלופי', async b => {
