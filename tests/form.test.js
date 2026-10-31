@@ -509,6 +509,64 @@ test('שליפה מקבצים כוללת את "השפעה על התפקוד"', a
   assert.strictEqual(await page.evaluate(() => 'impact' in extractSchema() && /שדה impact/.test(EXTRACT_GUIDE)), true);
 });
 
+// תשובת Claude מדומה בהזרמה; שומרת את גוף הבקשה כדי לבדוק אילו הוראות נשלחו
+async function mockClaude(page, reply){
+  const sent = [];
+  await page.route('https://api.anthropic.com/v1/messages', r => { sent.push(JSON.parse(r.request().postData())); r.fulfill({status: 200, contentType: 'text/event-stream', body:
+    'data: ' + JSON.stringify({type:'content_block_delta', index:0, delta:{type:'text_delta', text: JSON.stringify(reply)}}) + '\n\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n'}); });
+  await page.evaluate(() => { apiKey = 'sk-ant-test'; });
+  return sent;
+}
+
+test('סגנון ניסוח: ברירת מחדל סגנון המכון, ובחירה ב-ICF נשמרת ונשלחת', async b => {
+  const page = await fresh(b);
+  await page.evaluate(() => { chipInput('fm', 'midNo').checked = true; update(); });
+  const sent = await mockClaude(page, {f_fm: 'נצפה קושי בחציית קו האמצע.'});
+  await tab(page, 'st_review');
+  assert.strictEqual(await page.$eval('#polishStyle', e => e.value), 'inst');
+  await page.click('#polish'); await page.click('[data-send="yes"]'); await page.waitForSelector('#undoPolish');
+  assert.match(sent[0].system, /בסגנון של המכון/);
+  await page.selectOption('#polishStyle', 'icf');
+  assert.match(await page.textContent('#styleHint'), /\[לבדיקה/);
+  await page.reload();
+  await page.evaluate(() => { apiKey = 'sk-ant-test'; });   // המפתח נשמר בזיכרון בלבד, ונדרש שוב אחרי רענון
+  await tab(page, 'st_review');
+  assert.strictEqual(await page.$eval('#polishStyle', e => e.value), 'icf');   // נשמר בדפדפן
+  await page.click('#polish'); await page.click('[data-send="yes"]'); await page.waitForSelector('#undoPolish');
+  assert.match(sent[1].system, /מודל ה-ICF/);
+});
+
+test('הוראות ה-ICF שומרות על כללי הבטיחות, וחוזקות קודם בסיכום', async b => {
+  const page = await fresh(b);
+  const g = await page.evaluate(() => ICF_GUIDE);
+  [/החזר אך ורק אובייקט JSON תקין/, /שמור על המגדר/, /אל תקבע אבחנה רפואית/, /לעגל או להשמיט/, /אסור להשמיט קושי/,
+   /חובה לעטוף את כל המשפט בסימון \[לבדיקה: \.\.\.\]/, /פתח במשפט הפתיחה, ואחריו בחוזקות/].forEach(re => assert.match(g, re));
+  assert.strictEqual(await page.evaluate(() => 'polishStyle' in collectState().ctl), false);   // לא חלק מהטיוטה
+});
+
+test('קשר שסומן [לבדיקה]: הודעה, תג, בדיקה לפני ייצוא ואישור לפני ייצוא', async b => {
+  const page = await fresh(b);
+  await page.evaluate(() => { store(STYLE_STORE, 'icf'); styleSync(); chipInput('fm', 'midNo').checked = true; update(); });
+  await mockClaude(page, {f_fm: 'נצפה קושי בחציית קו האמצע. [לבדיקה: הקושי עשוי להשפיע על הכתיבה בגן.]'});
+  await tab(page, 'st_review');
+  await page.click('#polish'); await page.click('[data-send="yes"]'); await page.waitForSelector('#undoPolish');
+  assert.match(await page.textContent('#status'), /Claude הציע 1 קשרים בין ממצאים לתפקוד/);
+  assert.match(await page.textContent('#bd_f_fm'), /1 לבדיקה/);
+  assert.match(await page.textContent('#checks'), /יש קשרים ש-Claude הציע ועוד לא אושרו/);
+  // ייצוא: נשאלת שאלה, ו"ביטול" עוצר את הייצוא
+  let asked = 0; page.on('dialog', d => { asked++; d.dismiss(); });
+  await page.evaluate(() => { window.__dl = null; HTMLAnchorElement.prototype.click = function(){ window.__dl = this.download; }; });
+  await page.click('#exportWord');
+  assert.strictEqual(asked, 1);
+  assert.strictEqual(await page.evaluate(() => window.__dl), null);
+  // אישור הקשר: מוחקים את הסימון, ואז הייצוא עובר בלי שאלה
+  await page.fill('#o_f_fm', 'נצפה קושי בחציית קו האמצע. הקושי עשוי להשפיע על הכתיבה בגן.');
+  assert.ok(!(await page.textContent('#checks')).includes('לא אושרו'));
+  await page.click('#exportWord');
+  assert.strictEqual(asked, 1);
+  assert.match(await page.evaluate(() => window.__dl), /\.docx$/);
+});
+
 test('פענוח תשובת Claude בהזרמה, כולל מעבר למודל חלופי', async b => {
   const page = await fresh(b);
   const r = await page.evaluate(() => parseSSE([

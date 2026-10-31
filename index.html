@@ -755,7 +755,10 @@ const REVIEW_HTML = `
 </section>
 <section class="card">
   <h3>ניסוח בעזרת Claude <span class="opt">לא חובה</span></h3>
-  <p class="hint" style="margin:0 0 12px">הופך את הטקסט לפרוזה רציפה בסגנון המכון וכותב סיכום. לפני השליחה תראי בדיוק מה יוצא, בלי שמות.</p>
+  <p class="hint" style="margin:0 0 12px">הופך את הטקסט לפרוזה רציפה וכותב סיכום, בסגנון שבוחרים כאן. לפני השליחה תראי בדיוק מה יוצא, בלי שמות.</p>
+  <div class="ctl"><label class="lbl" for="polishStyle">סגנון הניסוח</label>
+    <select id="polishStyle"><option value="inst">סגנון המכון</option><option value="icf">דוח אינטגרטיבי (ICF, מבוסס חוזקות)</option></select>
+    <p class="hint" id="styleHint"></p></div>
   <button class="btn primary" id="polish">ניסוח בעזרת Claude</button>
   <div id="status" style="margin-top:12px"></div>
 </section>
@@ -1009,6 +1012,8 @@ function runChecks(){
   if (ageProblem()) bad(ageProblem(), 'st_start');
   if (val('ref') && chips('reasons').length) ok('גורם מפנה וסיבות הפניה סומנו.'); else bad('חסר גורם מפנה או סיבת הפניה.', 's_bg');
   const tagged = FIELDS.filter(f => TAG_RE.test($('o_' + f[0]).value)).map(f => f[1]);
+  const rvf = fieldsWithReview();
+  if (rvf.length) bad('יש קשרים ש-Claude הציע ועוד לא אושרו ([לבדיקה: ...]) ב: ' + rvf.map(f => f[1]).join(', ') + '. לאשר: למחוק רק את הסימון. לדחות: למחוק את המשפט.');
   if (tagged.length) bad('נשארו תגיות כמו [יישוב] או [הוסר] ב: ' + tagged.join(', ') + '. השלימי או מחקי אותן בשדות למטה.'); else ok('אין תגיות שנשארו בטקסט.');
   const sugg = suggestGoals().filter(x => !goalOrder.includes(x.k));
   if (sugg.length) bad('יש קשיים בלי מטרה מתאימה: ' + sugg.map(x => goalTitle(x.k)).join(', ') + '.', 's_goals'); else ok('לכל קושי שסומן יש מטרה.');
@@ -1473,11 +1478,11 @@ function renderOut(){
     '<button data-reset="' + f[0] + '" hidden>חזרה לאוטומטי</button><button data-copy="' + f[0] + '">העתקה</button><button class="addtxt" data-addtxt="' + f[0] + '" type="button">+ הוספת טקסט</button></div>' +
     '<textarea id="o_' + f[0] + '" aria-label="' + esc(f[1]) + '"></textarea></div>').join('');
   $('out').addEventListener('input', e => {
-    if (e.target.id && e.target.id.startsWith('o_')){ const k = e.target.id.slice(2); dirty[k] = true; aiDone[k] = false; delete aiWarn[k]; markField(k); if (polishUndo) delete polishUndo[k]; saveSessionSoon(); }
+    if (e.target.id && e.target.id.startsWith('o_')){ const k = e.target.id.slice(2); dirty[k] = true; aiDone[k] = false; delete aiWarn[k]; markField(k); if (polishUndo) delete polishUndo[k]; updateExtras(); saveSessionSoon(); }
   });
   $('out').addEventListener('click', e => {
     const c = e.target.getAttribute('data-copy'), r = e.target.getAttribute('data-reset');
-    if (c) copyText($('o_' + c).value, 'השדה הועתק');
+    if (c && reviewGuard(FIELDS.filter(f => f[0] === c))) copyText($('o_' + c).value, 'השדה הועתק');
     if (r){ dirty[r] = false; aiDone[r] = false; delete aiWarn[r]; update(); }
     const a = e.target.getAttribute('data-addtxt');
     if (a){ $('of_' + a).classList.add('open'); $('o_' + a).focus(); }
@@ -1485,9 +1490,9 @@ function renderOut(){
 }
 function markField(k){
   const bd = $('bd_' + k), btn = document.querySelector('[data-reset="' + k + '"]');
-  const w = aiDone[k] && aiWarn[k];
-  bd.textContent = aiDone[k] ? 'נוסח ע"י Claude' + (w ? ' · חסרים פרטים' : '') : (dirty[k] ? 'נערך ידנית' : '');
-  bd.className = 'badge' + (w ? ' warn' : aiDone[k] ? ' ai' : '');
+  const w = aiDone[k] && aiWarn[k], rv = reviewCount($('o_' + k).value);
+  bd.textContent = (aiDone[k] ? 'נוסח ע"י Claude' + (w ? ' · חסרים פרטים' : '') : (dirty[k] ? 'נערך ידנית' : '')) + (rv ? (dirty[k] || aiDone[k] ? ' · ' : '') + rv + ' לבדיקה' : '');
+  bd.className = 'badge' + (w || rv ? ' warn' : aiDone[k] ? ' ai' : '');
   bd.title = w ? 'חסרים בניסוח: ' + aiWarn[k].map(showNames).join(', ') : '';
   btn.hidden = !dirty[k];
 }
@@ -1682,7 +1687,7 @@ function parseSSE(raw){
 // =====================================================================
 //  טיוטה מוצפנת: שמירה לקובץ ופתיחה ממנו (למעבר בין טלפון למחשב)
 // =====================================================================
-const DRAFT_SKIP = ['imFiles', 'imPaste', 'imExtra', 'kKey', 'kCode', 'kCode2', 'kModel', 'dPass', 'dPass2'];
+const DRAFT_SKIP = ['polishStyle', 'imFiles', 'imPaste', 'imExtra', 'kKey', 'kCode', 'kCode2', 'kModel', 'dPass', 'dPass2'];
 function collectState(){
   const st = {v:1, ctl:{}, chips:{}, goals:goalOrder.slice(), out:{}};
   document.querySelectorAll('header input[id], header select[id], #pages input[id], #pages select[id], #pages textarea[id]').forEach(el => {
@@ -2090,6 +2095,50 @@ const STYLE_GUIDE = `אתה עוזר למרפאה בעיסוק במכון להת
 
 החזר אך ורק אובייקט JSON תקין עם אותם מפתחות שקיבלת, בלי טקסט נוסף.`;
 
+// סגנון חלופי: דוח אינטגרטיבי לפי מודל ה-ICF, בגישה מבוססת חוזקות. אותם כללי ברזל כמו בסגנון המכון.
+// קשר בין ממצא לתפקוד ש-Claude מסיק בעצמו נעטף ב-[לבדיקה: ...], והמאבחנת מאשרת או מוחקת אותו.
+const ICF_GUIDE = `אתה עוזר למרפאה בעיסוק התפתחותית בכירה במכון להתפתחות הילד בישראל לנסח שדות של דוח סיכום אבחון שמוזן למערכת Cliks.
+קיבלת שדות שכבר מכילים את הממצאים. התפקיד שלך הוא לנסח אותם כדוח אינטגרטיבי לפי מודל ה-ICF, בגישה מבוססת חוזקות, ולכתוב סיכום.
+
+כללי ברזל:
+1. אסור להוסיף ממצא, אבחנה, ציון או פרט שלא מופיע בשדות. אם שדה ריק, החזר אותו ריק.
+2. אסור לשנות, לעגל או להשמיט ציונים, אחוזונים, ציוני תקן, זמנים או מספרים.
+3. תגיות כמו [שם], [שם2], [שם משפחה], [תאריך] הן פרטים שהוסרו. העתק אותן בדיוק כמו שהן, במקומות המתאימים.
+4. שמור על המגדר שצוין לאורך כל הטקסט.
+5. אל תקבע אבחנה רפואית. תאר תפקוד.
+
+סגנון אינטגרטיבי (ICF):
+- אל תכתוב רשימה של ממצאים מבודדים. קשר בין מרכיבי התפקוד (מוטוריקה גסה ועדינה, ויסות חושי, תפיסה, קשב וארגון) לבין ההשתתפות של הילד ביומיום: עצמאות בתפקודי יומיום, משחק, ולמידה בגן או בבית הספר.
+- קשר שכתוב בשדות (למשל בהשפעה על התפקוד, או בדיווח ההורים והמסגרת): כתוב אותו כרגיל.
+- קשר שאתה מסיק בעצמך ואינו כתוב בשדות: מותר להציע אותו רק אם הוא נשען על ממצא שמופיע בשדות, וחובה לעטוף את כל המשפט בסימון [לבדיקה: ...], כדי שהמאבחנת תאשר או תמחק. בתוך הסימון אל תשתמש בסוגריים מרובעים.
+  דוגמה: "[לבדיקה: הקושי בשמירה על יציבה בישיבה עשוי להשפיע על ההתמדה במטלות גרפומוטוריות ליד שולחן.]"
+- שפה מקצועית, מכבדת ולא שיפוטית. למשל, במקום "לא משתף פעולה": "נזקק לתיווך ולחיזוקים לשם גיוס והתמדה במטלה".
+- גוף שלישי, זמן הווה בתיאור תפקוד, עבר בתיאור מהלך האבחון ("הגיע", "שיתף פעולה").
+- ממצאים: פסקה רציפה לכל תחום, שפותחת במה שתקין ושמור בתחום, ואחריו מוקדי הקושי.
+- Beery: "באבחון BEERY, בחלק הבודק אינטגרציה ויזו-מוטורית קיבל ציון באחוזון 30, בטווח הנורמה לגילו, מתחת לממוצע."
+- סיכום: קיבלת טיוטת סיכום. פתח במשפט הפתיחה, ואחריו בחוזקות, בתחומי העניין ובתפקודים השמורים של הילד. אחריהם תאר את מוקדי הקושי תחום אחר תחום, וקשר אותם להשתתפות היומיומית לפי הכללים שלמעלה.
+- בסיכום אסור להשמיט קושי, ממצא חריג או ציון מתחת לנורמה שמופיעים בטיוטה. אפשר לקצר ולאחד רק תיאורים של תפקוד תקין. בלי מידע שלא מופיע בממצאים.
+
+החזר אך ורק אובייקט JSON תקין עם אותם מפתחות שקיבלת, בלי טקסט נוסף.`;
+
+// בחירת סגנון הניסוח (נשמרת בדפדפן)
+const STYLES = {
+  inst: {label: 'סגנון המכון', guide: STYLE_GUIDE},
+  icf: {label: 'דוח אינטגרטיבי (ICF, מבוסס חוזקות)', guide: ICF_GUIDE},
+};
+const STYLE_STORE = 'ot_form_style_v1';
+function getStyle(){ const v = load(STYLE_STORE); return STYLES[v] ? v : 'inst'; }
+// קשרים ש-Claude הציע ועוד לא אושרו
+const REVIEW_RE = /\[לבדיקה:[^\]]*\]/g;
+const reviewCount = t => (t.match(REVIEW_RE) || []).length;
+function fieldsWithReview(){ return FIELDS.filter(f => reviewCount($('o_' + f[0]).value)); }
+// לפני העתקה או ייצוא: אם נשארו קשרים לבדיקה, לשאול
+function reviewGuard(fields){
+  const left = fields.filter(f => reviewCount($('o_' + f[0]).value));
+  if (!left.length) return true;
+  return confirm('בדוח יש קשרים שמסומנים [לבדיקה: ...] ועוד לא אושרו (' + left.map(f => f[1]).join(', ') + ').\nלאשר קשר: למחוק רק את הסימון. לדחות: למחוק את כל המשפט.\n\nלהמשיך בכל זאת?');
+}
+
 async function polish(){
   const payload = {};
   POLISH_KEYS.forEach(k => { const v = $('o_' + k).value.trim(); if (v) payload[k] = hideNames(v); });
@@ -2104,7 +2153,7 @@ async function polish(){
   if (!(await confirmSend('ניסוח בעזרת Claude', preview))) return;
   const btn = $('polish'); btn.disabled = true; btn.textContent = 'מנסח...';
   try {
-    const obj = parseJsonReply(await callClaude(STYLE_GUIDE, user, n => { btn.textContent = 'מנסח... (' + n + ' תווים)'; }));
+    const obj = parseJsonReply(await callClaude(STYLES[getStyle()].guide, user, n => { btn.textContent = 'מנסח... (' + n + ' תווים)'; }));
     // שומרים את המצב הקודם של כל שדה, כדי שאפשר יהיה לבטל את הניסוח
     const before = {};
     let n = 0;
@@ -2116,9 +2165,13 @@ async function polish(){
       }
     });
     polishUndo = n ? before : null;
+    updateExtras();   // הבדיקה לפני ייצוא מתעדכנת לפי הטקסט המנוסח
     const warned = Object.keys(aiWarn).filter(k => before[k]);
     $('status').innerHTML = '<div class="okbox">נוסחו ' + n + ' שדות. זו טיוטה: קראי ואשרי כל שדה לפני ההדבקה ב-Cliks.' +
       (n ? ' <button class="linkbtn" id="undoPolish" type="button">ביטול הניסוח</button>' : '') + '</div>' +
+      (Object.keys(before).some(k => reviewCount($('o_' + k).value)) ? '<div class="warnbox" role="alert"><b>Claude הציע ' +
+        Object.keys(before).reduce((a, k) => a + reviewCount($('o_' + k).value), 0) + ' קשרים בין ממצאים לתפקוד, שמסומנים [לבדיקה: ...].</b> ' +
+        'לאשר קשר: למחוק רק את הסימון. לדחות: למחוק את כל המשפט.</div>' : '') +
       (warned.length ? '<div class="warnbox" role="alert"><b>בניסוח חסרים פרטים מהמקור. כדאי לבדוק:</b><ul style="margin:6px 0 0">' +
         warned.map(k => '<li>' + esc(fieldTitle(k)) + ': ' + esc(aiWarn[k].map(showNames).join(', ')) + '</li>').join('') + '</ul></div>' : '');
     saveSession();
@@ -2570,6 +2623,7 @@ function buildDocx(){
 // אותו תוכן כמו בקובץ ה-Word, בעיצוב להדפסה. מ"שמירה כ-PDF" בחלון ההדפסה מתקבל קובץ PDF.
 function reportMeta(){ return [val('name') ? 'שם: ' + [val('name'), val('surname')].filter(Boolean).join(' ') : '', ageNum() ? 'גיל: ' + ageNum() : '', reportDate()].filter(Boolean).join('   |   '); }
 function printReport(){
+  if (!reviewGuard(FIELDS)) return;
   const fields = FIELDS.map(f => [f[1], $('o_' + f[0]).value.trim()]).filter(x => x[1]);
   if (!fields.length){ flash('אין עדיין תוכן להדפסה'); return; }
   const me = loadMe();
@@ -2580,6 +2634,7 @@ function printReport(){
   window.print();
 }
 function exportWord(){
+  if (!reviewGuard(FIELDS)) return;
   const r = buildDocx();
   if (!r.count){ flash('אין עדיין תוכן לייצוא'); return; }
   const d = new Date();
@@ -2815,6 +2870,14 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('more').
 keyStatus();
 $('exportWord').addEventListener('click', exportWord);
 $('printReport').addEventListener('click', printReport);
+// סגנון הניסוח: נשמר בדפדפן, עם הסבר קצר מתחת לבחירה
+const STYLE_HINTS = {
+  inst: 'פרוזה קלינית בסגנון המכון: הקשיים בכל תחום, והחוזקות בסוף הסיכום.',
+  icf: 'קישור בין הממצאים להשתתפות ביומיום, והסיכום נפתח בחוזקות. קשרים ש-Claude מסיק בעצמו מסומנים [לבדיקה: ...], וצריך לאשר או למחוק אותם לפני ההעתקה.',
+};
+function styleSync(){ $('polishStyle').value = getStyle(); $('styleHint').textContent = STYLE_HINTS[getStyle()]; }
+$('polishStyle').addEventListener('change', e => { store(STYLE_STORE, e.target.value === 'inst' ? null : e.target.value); styleSync(); });
+styleSync();
 $('imRead').addEventListener('click', importRead);
 $('imHeads').addEventListener('click', fillByHeadings);
 $('imExtract').addEventListener('click', extractWithClaude);
@@ -2835,7 +2898,7 @@ $('imPreview').addEventListener('click', e => {
 // סימון "מולא מקובץ" נעלם כשעורכים את השדה
 document.addEventListener('input', e => { const c = e.target.closest && e.target.closest('.ctl.filled'); if (c) c.classList.remove('filled'); });
 document.addEventListener('change', e => { const c = e.target.closest && e.target.closest('.ctl.filled'); if (c) c.classList.remove('filled'); });
-$('copyAll').addEventListener('click', () => copyText(FIELDS.map(f => { const v = $('o_' + f[0]).value.trim(); return v ? f[1] + ':\n' + v : ''; }).filter(Boolean).join('\n\n'), 'כל השדות הועתקו'));
+$('copyAll').addEventListener('click', () => reviewGuard(FIELDS) && copyText(FIELDS.map(f => { const v = $('o_' + f[0]).value.trim(); return v ? f[1] + ':\n' + v : ''; }).filter(Boolean).join('\n\n'), 'כל השדות הועתקו'));
 $('resetAll').addEventListener('click', resetForm);
 $('status').addEventListener('click', e => {
   if (e.target.id === 'undoPolish') undoPolish();
