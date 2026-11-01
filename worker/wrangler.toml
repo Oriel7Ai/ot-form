@@ -13,4 +13,4 @@ DAILY_LIMIT = "60"
 # ההוראות ל-Claude ומונה השימוש. את ה-id מקבלים כשיוצרים את ה-namespace (ראו README.md).
 [[kv_namespaces]]
 binding = "OT_FORM"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "eeaeb7e464db4c8fa20c41653a13aecf"
