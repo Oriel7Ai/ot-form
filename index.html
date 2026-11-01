@@ -1585,6 +1585,7 @@ async function unlockKey(code){
 
 function keyStatus(){
   const b = $('keyBtn');
+  if (PROXY.url){ b.textContent = accessCode() ? 'קוד גישה: מוגדר' : 'קוד גישה'; b.classList.toggle('ok', !!accessCode()); return; }
   if (apiKey){ b.textContent = 'מפתח: פתוח'; b.classList.add('ok'); }
   else { b.textContent = hasStoredKey() ? 'מפתח: נעול' : 'הגדרת מפתח API'; b.classList.remove('ok'); }
 }
@@ -1612,6 +1613,7 @@ function trapFocus(e){
 }
 
 function openKeyPanel(after, msg){
+  if (PROXY.url) return openAccessPanel(after, msg);
   keyAfter = after || null;
   let h = '<h3>מפתח API של Claude</h3>';
   if (apiKey){
@@ -1637,6 +1639,13 @@ async function keyAction(act){
   if ($('kModel')){ const m = v('kModel'); store(MODEL_STORE, m && m !== DEFAULT_MODEL ? m : null); }
   try {
     if (act === 'close'){ closeModal(); keyAfter = null; return; }
+    if (act === 'acc-forget'){ store(ACCESS_STORE, null); keyStatus(); closeModal(); flash('קוד הגישה נמחק מהדפדפן'); return; }
+    if (act === 'acc-save'){
+      const c = v('aCode');
+      if (c.length < 8) return openAccessPanel(keyAfter, 'קוד הגישה צריך להיות באורך 8 תווים לפחות.');
+      if (!store(ACCESS_STORE, c)) return openAccessPanel(keyAfter, 'הדפדפן לא מאפשר שמירה.');
+      keyStatus(); closeModal(); const next = keyAfter; keyAfter = null; if (next) next(); return;
+    }
     if (act === 'lock'){ apiKey = null; keyStatus(); closeModal(); flash('המפתח ננעל'); return; }
     if (act === 'forget'){
       if (!confirm('למחוק את המפתח השמור מהמחשב הזה? תצטרכי להזין אותו מחדש.')) return;
@@ -1671,21 +1680,44 @@ function confirmSend(title, text){
 
 // קריאה ל-Claude בהזרמה (stream), כדי להציג התקדמות ולא להיתקע על בקשות ארוכות.
 // onProgress מקבל את מספר התווים שהתקבלו עד עכשיו.
-// opts.model: מודל אחר מברירת המחדל; opts.format: מבנה תשובה מובטח (structured outputs)
+// ---- Worker מתווך: כשמוגדרת כתובת, הבקשות עוברות דרכו עם קוד גישה אישי, וההוראות ל-Claude
+// נמצאות ב-Worker ולא כאן. כל עוד הכתובת ריקה, הטופס פונה ל-Claude ישירות עם מפתח API, כמו קודם.
+const PROXY = {url: ''};
+const ACCESS_STORE = 'ot_form_access_v1';
+const accessCode = () => load(ACCESS_STORE) || '';
+const claudeReady = () => PROXY.url ? !!accessCode() : !!apiKey;
+function openAccessPanel(after, msg){
+  keyAfter = after || null;
+  openModal('<h3>קוד גישה</h3><p>הקוד האישי שקיבלת מאפשר להשתמש בניסוח ובשליפה בעזרת Claude. הוא נשמר בדפדפן הזה בלבד.</p>' +
+    '<label class="lbl" for="aCode">קוד הגישה</label><input type="password" id="aCode" autocomplete="off" value="' + esc(accessCode()) + '">' +
+    '<div class="mrow"><button class="btn primary" data-k="acc-save">שמירה</button>' + (accessCode() ? '<button class="btn" data-k="acc-forget">מחיקת הקוד</button>' : '') + '<button class="btn" data-k="close">ביטול</button></div>' +
+    (msg ? '<div class="warnbox" style="margin-top:10px">' + esc(msg) + '</div>' : ''));
+}
+
+// opts.model: מודל אחר מברירת המחדל; opts.format: מבנה תשובה מובטח (structured outputs);
+// opts.kind ('polish' / 'extract') ו-opts.style: לפיהם ה-Worker בוחר את ההוראות
 async function callClaude(system, user, onProgress, opts){
   opts = opts || {};
   const model = opts.model || getModel();
-  const headers = {'content-type':'application/json', 'x-api-key':apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true'};
-  const body = {model, max_tokens:MAX_TOKENS, stream:true, system, messages:[{role:'user', content:user}]};
-  if (opts.format) body.output_config = {format: opts.format};
-  if (FALLBACK_MODELS.includes(model)){ headers['anthropic-beta'] = 'server-side-fallback-2026-07-01'; body.fallbacks = 'default'; }
+  let url = API_URL, headers, body;
+  if (PROXY.url){
+    url = PROXY.url;
+    headers = {'content-type': 'application/json', 'x-ot-code': accessCode()};
+    body = {kind: opts.kind || 'polish', style: opts.style || 'inst', user, model, format: opts.format};
+  } else {
+    headers = {'content-type':'application/json', 'x-api-key':apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true'};
+    body = {model, max_tokens:MAX_TOKENS, stream:true, system, messages:[{role:'user', content:user}]};
+    if (opts.format) body.output_config = {format: opts.format};
+    if (FALLBACK_MODELS.includes(model)){ headers['anthropic-beta'] = 'server-side-fallback-2026-07-01'; body.fallbacks = 'default'; }
+  }
   let res;
-  try { res = await fetch(API_URL, {method:'POST', headers, body: JSON.stringify(body)}); }
+  try { res = await fetch(url, {method:'POST', headers, body: JSON.stringify(body)}); }
   catch (e){ throw new Error('אין חיבור ל-Claude. בדקי את חיבור האינטרנט.'); }
   if (!res.ok){
     const data = await res.json().catch(() => ({}));
     const m = (data.error && data.error.message) || '';
-    if (res.status === 401) throw new Error('המפתח לא תקין או בוטל (401). פתחי את "הגדרת מפתח" והזיני מפתח חדש.');
+    if (res.status === 401) throw new Error(PROXY.url ? 'קוד הגישה לא תקין או בוטל. פתחי את "קוד גישה" בתפריט "עוד".' : 'המפתח לא תקין או בוטל (401). פתחי את "הגדרת מפתח" והזיני מפתח חדש.');
+    if (res.status === 429 && PROXY.url && m) throw new Error(m);   // מגבלת השימוש היומית של ה-Worker
     if (res.status === 429) throw new Error('יותר מדי בקשות או שנגמרה המכסה (429). נסי שוב בעוד דקה, ובדקי את תקרת ההוצאה.');
     if (res.status === 529 || res.status >= 500) throw new Error('השרת של Claude עמוס כרגע (' + res.status + '). נסי שוב בעוד כמה דקות.');
     const err = new Error('Claude החזיר שגיאה ' + res.status + (m ? ': ' + m : '')); err.status = res.status; throw err;
@@ -2226,12 +2258,12 @@ async function polish(){
   const leak = nameList().find(x => blob.includes(x.name));
   if (leak){ $('status').innerHTML = '<div class="warnbox">הניסוח בוטל: נמצא שם בטקסט שעמד להישלח. בדקי את השדות.</div>'; return; }
   const user = 'מגדר: ' + (val('gender') === 'f' ? 'בת' : 'בן') + '. קבוצת גיל: ' + (isToddler() ? 'פעוט' : 'ילד') + '.\nהשדות:\n' + JSON.stringify(payload, null, 2);
-  if (!apiKey){ openKeyPanel(polish); return; }
+  if (!claudeReady()){ openKeyPanel(polish); return; }
   const preview = user.split('\n')[0] + '\n\n' + Object.keys(payload).map(k => '— ' + fieldTitle(k) + ' —\n' + payload[k]).join('\n\n');
   if (!(await confirmSend('ניסוח בעזרת Claude', preview))) return;
   const btn = $('polish'); btn.disabled = true; btn.textContent = 'מנסח...';
   try {
-    const obj = parseJsonReply(await callClaude(STYLES[getStyle()].guide, user, n => { btn.textContent = 'מנסח... (' + n + ' תווים)'; }));
+    const obj = parseJsonReply(await callClaude(STYLES[getStyle()].guide, user, n => { btn.textContent = 'מנסח... (' + n + ' תווים)'; }, {kind: 'polish', style: getStyle()}));
     // שומרים את המצב הקודם של כל שדה, כדי שאפשר יהיה לבטל את הניסוח
     const before = {};
     let n = 0;
@@ -2664,15 +2696,15 @@ async function extractWithClaude(){
   const body = text.length > EXTRACT_MAX ? text.slice(0, EXTRACT_MAX) : text;
   const sc = extractSchema();
   const user = 'מגדר: ' + (val('gender') === 'f' ? 'בת' : 'בן') + '.\n' + EXTRACT_MODE_GUIDE[importMode] + '\n\nהשדות האפשריים:\n' + JSON.stringify(sc) + '\n\nהטקסט:\n' + body;
-  if (!apiKey){ openKeyPanel(extractWithClaude); return; }
+  if (!claudeReady()){ openKeyPanel(extractWithClaude); return; }
   if (!(await confirmSend('שליפה וניתוח בעזרת Claude', user.split('\n').slice(0, 2).join('\n') + '\n\n' + body))) return;
   const btn = $('imExtract'); btn.disabled = true; btn.textContent = 'מנתח...';
   const prog = n => { btn.textContent = 'מנתח... (' + n + ' תווים)'; };
   const model = load(MODEL_STORE) || EXTRACT_MODEL;
   try {
     let reply;
-    try { reply = await callClaude(EXTRACT_GUIDE, user, prog, {model, format: EXTRACT_FORMAT}); }
-    catch(e){ if (e.status !== 400) throw e; reply = await callClaude(EXTRACT_GUIDE, user, prog, {model}); }   // בלי structured outputs, אם המודל לא תומך
+    try { reply = await callClaude(EXTRACT_GUIDE, user, prog, {model, format: EXTRACT_FORMAT, kind: 'extract'}); }
+    catch(e){ if (e.status !== 400) throw e; reply = await callClaude(EXTRACT_GUIDE, user, prog, {model, kind: 'extract'}); }   // בלי structured outputs, אם המודל לא תומך
     const obj = parseJsonReply(reply);
     extractItems = checkItems(obj.items, sc, body);
     renderExtractReview(text.length > EXTRACT_MAX);
@@ -3103,7 +3135,7 @@ $('modal').addEventListener('click', e => {
 $('modal').addEventListener('click', e => { const a = e.target.getAttribute && e.target.getAttribute('data-k'); if (a) keyAction(a); });
 $('modal').addEventListener('keydown', e => {
   if (e.key !== 'Enter' || e.target.tagName !== 'INPUT') return;
-  const b = $('modal').querySelector('[data-k="unlock"],[data-k="save"],[data-d="save"],[data-d="open"],[data-c="save"],[data-p="add"],[data-p="mesave"]'); if (b){ e.preventDefault(); b.click(); }
+  const b = $('modal').querySelector('[data-k="unlock"],[data-k="save"],[data-k="acc-save"],[data-d="save"],[data-d="open"],[data-c="save"],[data-p="add"],[data-p="mesave"]'); if (b){ e.preventDefault(); b.click(); }
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('modalWrap').hidden){ const no = $('modal').querySelector('[data-send="no"],[data-k="close"],[data-d="close"],[data-c="close"],[data-p="close"],[data-dict="no"],[data-fb-close],[data-ins="close"]'); if (no) no.click(); } });
 document.addEventListener('keydown', trapFocus);

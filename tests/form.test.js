@@ -770,6 +770,27 @@ test('משוב על שלב: נשמר בלי פרטים מזהים, ומופיע 
   assert.strictEqual(await page.evaluate(() => TELEMETRY.data().feedbackItems.length), 0);
 });
 
+test('מצב Worker מתווך: קוד גישה, בלי מפתח ובלי הוראות בבקשה', async b => {
+  // ה-CSP של האתר עדיין לא כולל כתובת Worker, ולכן הבדיקה עוקפת אותו
+  const page = await fresh(b, {bypassCSP: true});
+  const W = 'https://ot-form-proxy.example.workers.dev/';
+  await page.evaluate(w => { PROXY.url = w; keyStatus(); chipInput('fm', 'midNo').checked = true; update(); }, W);
+  assert.strictEqual(await page.textContent('#keyBtn'), 'קוד גישה');
+  const sent = [];
+  await page.route(W, r => { sent.push({h: r.request().headers(), b: JSON.parse(r.request().postData())}); r.fulfill({status: 200, contentType: 'text/event-stream', body:
+    'data: ' + JSON.stringify({type:'content_block_delta', index:0, delta:{type:'text_delta', text: '{"f_fm":"נצפה קושי בחציית קו האמצע."}'}}) + '\n\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n'}); });
+  await tab(page, 'st_review');
+  await page.selectOption('#polishStyle', 'icf');
+  await page.click('#polish');
+  await page.fill('#aCode', 'ruth-7f3a9c21'); await page.click('[data-k="acc-save"]');   // בקשת קוד, ואז ממשיכים
+  await page.click('[data-send="yes"]'); await page.waitForSelector('#undoPolish');
+  assert.strictEqual(sent.length, 1);
+  assert.strictEqual(sent[0].h['x-ot-code'], 'ruth-7f3a9c21');
+  assert.strictEqual(sent[0].h['x-api-key'], undefined);
+  assert.deepStrictEqual([sent[0].b.kind, sent[0].b.style, 'system' in sent[0].b], ['polish', 'icf', false]);
+  assert.strictEqual(await page.textContent('#keyBtn'), 'קוד גישה: מוגדר');
+});
+
 test('פענוח תשובת Claude בהזרמה, כולל מעבר למודל חלופי', async b => {
   const page = await fresh(b);
   const r = await page.evaluate(() => parseSSE([

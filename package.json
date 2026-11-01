@@ -3,7 +3,7 @@
   "private": true,
   "description": "טופס דוח אבחון בריפוי בעיסוק",
   "scripts": {
-    "test": "node tests/form.test.js"
+    "test": "node tests/form.test.js && node tests/worker.test.js"
   },
   "devDependencies": {
     "playwright": "1.63.0"
