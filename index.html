@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- הדף מתקשר רק עם Claude (api.anthropic.com) ועם Google (כניסה ושמירה בענן). רכיב הכניסה של Google נטען עם הדף; נתונים נשלחים רק בלחיצה של המשתמשת. שום כתובת אחרת לא נגישה ממנו. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://accounts.google.com; script-src 'unsafe-inline' https://accounts.google.com/gsi/client; frame-src https://accounts.google.com; img-src data: 'self'; connect-src https://api.anthropic.com https://www.googleapis.com https://accounts.google.com; manifest-src 'self'; worker-src 'self'">
+<!-- הדף מתקשר רק עם Claude (דרך ה-Worker המתווך ב-ot-form-proxy.oriel7ai.workers.dev, או ישירות ב-api.anthropic.com) ועם Google (כניסה ושמירה בענן). רכיב הכניסה של Google נטען עם הדף; נתונים נשלחים רק בלחיצה של המשתמשת. שום כתובת אחרת לא נגישה ממנו. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://accounts.google.com; script-src 'unsafe-inline' https://accounts.google.com/gsi/client; frame-src https://accounts.google.com; img-src data: 'self'; connect-src https://ot-form-proxy.oriel7ai.workers.dev https://api.anthropic.com https://www.googleapis.com https://accounts.google.com; manifest-src 'self'; worker-src 'self'">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#1e5aa8">
@@ -1682,7 +1682,7 @@ function confirmSend(title, text){
 // onProgress מקבל את מספר התווים שהתקבלו עד עכשיו.
 // ---- Worker מתווך: כשמוגדרת כתובת, הבקשות עוברות דרכו עם קוד גישה אישי, וההוראות ל-Claude
 // נמצאות ב-Worker ולא כאן. כל עוד הכתובת ריקה, הטופס פונה ל-Claude ישירות עם מפתח API, כמו קודם.
-const PROXY = {url: ''};
+const PROXY = {url: 'https://ot-form-proxy.oriel7ai.workers.dev'};
 const ACCESS_STORE = 'ot_form_access_v1';
 const accessCode = () => load(ACCESS_STORE) || '';
 const claudeReady = () => PROXY.url ? !!accessCode() : !!apiKey;

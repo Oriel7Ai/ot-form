@@ -445,7 +445,7 @@ test('ציפיות לפי גיל: הערה בכרטיס, בדיקה לפני י�
 
 test('אחרי ניסוח: בדיקה שכל מספר ותגית נשמרו', async b => {
   const page = await fresh(b);
-  await page.evaluate(() => { apiKey = 'sk-ant-test'; $('beery_vmi_p').value = '12'; $('beery_vmi_s').value = '82'; update(); });
+  await page.evaluate(() => { PROXY.url = ''; apiKey = 'sk-ant-test'; $('beery_vmi_p').value = '12'; $('beery_vmi_s').value = '82'; update(); });
   const reply = {f_fm: 'באבחון BEERY, בחלק הבודק אינטגרציה ויזו-מוטורית קיבל ציון נמוך מהנורמה.'};
   await page.route('https://api.anthropic.com/v1/messages', r => r.fulfill({status: 200, contentType: 'text/event-stream', body:
     'data: ' + JSON.stringify({type:'content_block_delta', index:0, delta:{type:'text_delta', text: JSON.stringify(reply)}}) + '\n\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n'}));
@@ -518,7 +518,7 @@ async function mockClaude(page, reply){
   const sent = [];
   await page.route('https://api.anthropic.com/v1/messages', r => { sent.push(JSON.parse(r.request().postData())); r.fulfill({status: 200, contentType: 'text/event-stream', body:
     'data: ' + JSON.stringify({type:'content_block_delta', index:0, delta:{type:'text_delta', text: JSON.stringify(reply)}}) + '\n\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n'}); });
-  await page.evaluate(() => { apiKey = 'sk-ant-test'; });
+  await page.evaluate(() => { PROXY.url = ''; apiKey = 'sk-ant-test'; });
   return sent;
 }
 
@@ -533,7 +533,7 @@ test('סגנון ניסוח: ברירת מחדל סגנון המכון, ובחי
   await page.selectOption('#polishStyle', 'icf');
   assert.match(await page.textContent('#styleHint'), /\[לבדיקה/);
   await page.reload();
-  await page.evaluate(() => { apiKey = 'sk-ant-test'; });   // המפתח נשמר בזיכרון בלבד, ונדרש שוב אחרי רענון
+  await page.evaluate(() => { PROXY.url = ''; apiKey = 'sk-ant-test'; });   // המפתח נשמר בזיכרון בלבד, ונדרש שוב אחרי רענון
   await tab(page, 'st_review');
   assert.strictEqual(await page.$eval('#polishStyle', e => e.value), 'icf');   // נשמר בדפדפן
   await page.click('#polish'); await page.click('[data-send="yes"]'); await page.waitForSelector('#undoPolish');
@@ -683,7 +683,7 @@ test('שליפה וניתוח: Opus עם מבנה מובטח, ציטוט לכל 
 test('שליפה: אם המודל לא תומך במבנה מובטח (400), נשלחת שוב בלי', async b => {
   const page = await fresh(b);
   await tab(page, 's_import'); await page.fill('#imPaste', 'רקע משפחתי: בת שנייה מתוך שלושה.'); await page.click('#imRead');
-  await page.evaluate(() => { apiKey = 'sk-ant-test'; });
+  await page.evaluate(() => { PROXY.url = ''; apiKey = 'sk-ant-test'; });
   const sent = [];
   await page.route('https://api.anthropic.com/v1/messages', r => { const b = JSON.parse(r.request().postData()); sent.push(b);
     if (b.output_config) return r.fulfill({status: 400, contentType: 'application/json', body: '{"error":{"message":"output_config not supported"}}'});
@@ -807,7 +807,7 @@ test('ניסוח בעזרת Claude: התקדמות, תשובה קטועה, וב�
   const sse = obj => ['data: ' + JSON.stringify({type:'content_block_delta', index:0, delta:{type:'text_delta', text: JSON.stringify(obj)}}),
     'data: ' + JSON.stringify({type:'message_delta', delta:{stop_reason: obj.__stop || 'end_turn'}}), ''].join('\n');
   let reply = {f_beh: 'ניסוח מלוטש.'}, bodySent = null;
-  await page.evaluate(() => { apiKey = 'sk-ant-test'; });
+  await page.evaluate(() => { PROXY.url = ''; apiKey = 'sk-ant-test'; });
   await page.route('https://api.anthropic.com/v1/messages', r => { bodySent = JSON.parse(r.request().postData()); r.fulfill({status: 200, contentType: 'text/event-stream', body: sse(reply)}); });
   await tab(page, 's_find'); await page.selectOption('#coop', 'full');
   const auto = await out(page, 'f_beh');
