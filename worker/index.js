@@ -5,12 +5,14 @@
 // - הטקסט מגיע אחרי הסרת פרטים מזהים בדפדפן. ה-Worker לא שומר ולא מתעד אותו.
 
 const API_URL = 'https://api.anthropic.com/v1/messages';
-const MODELS = {polish: 'claude-sonnet-5-5', extract: 'claude-opus-5-5'};   // ברירת מחדל לכל סוג בקשה
+const MODELS = {polish: 'claude-sonnet-5-5', refine: 'claude-sonnet-5-5', extract: 'claude-opus-5-5'};   // ברירת מחדל לכל סוג בקשה
 const ALLOWED_MODELS = ['claude-sonnet-5-5', 'claude-opus-5-5'];
 const FALLBACK_MODELS = ['claude-sonnet-5-5', 'claude-opus-5-5'];
 const MAX_TOKENS = 32000;
 const MAX_BODY = 400000;   // בתים: שליפה של עד 100,000 תווים בעברית, יחד עם רשימת השדות
-const PROMPT_KEYS = {inst: 'prompt:inst', icf: 'prompt:icf', extract: 'prompt:extract'};
+const PROMPT_KEYS = {inst: 'prompt:inst', icf: 'prompt:icf', extract: 'prompt:extract', refine: 'prompt:refine'};
+// עריכה מהירה של שדה אחד: הוראה כללית (prompt:refine) ועוד הוראה לכל פעולה (prompt:refine:<פעולה>)
+export const REFINE_ACTIONS = ['short', 'expand', 'strengths', 'parents'];
 
 // ---- בנק הניסוחים המשותף (KV, מפתח bank:v1): פסקאות לדוגמה לפי שדה, גיל וכלי הערכה.
 // בניסוח, ה-Worker בוחר את הדוגמאות שמתאימות לבקשה ומצרף אותן להוראות, כדי ש-Claude יכתוב באותו סגנון ועומק.
@@ -229,9 +231,10 @@ export default {
     let req; try { req = JSON.parse(raw); } catch(e){ return fail(400, 'בקשה לא תקינה.', ch); }
     if (adminCode) return admin(req || {}, env, ch);
     if (req && req.kind === 'contribute') return contribute(req, owner, env, ch);
-    const kind = req.kind === 'extract' ? 'extract' : req.kind === 'polish' ? 'polish' : null;
+    const kind = ['extract', 'polish', 'refine'].includes(req.kind) ? req.kind : null;
     if (!kind || typeof req.user !== 'string' || !req.user.trim()) return fail(400, 'בקשה לא תקינה.', ch);
-    const promptKey = kind === 'extract' ? 'extract' : (req.style === 'icf' ? 'icf' : 'inst');
+    if (kind === 'refine' && !REFINE_ACTIONS.includes(req.action)) return fail(400, 'פעולת עריכה לא מוכרת.', ch);
+    const promptKey = kind === 'extract' ? 'extract' : kind === 'refine' ? 'refine' : (req.style === 'icf' ? 'icf' : 'inst');
 
     // מגבלת שימוש יומית לכל קוד
     const day = new Date().toISOString().slice(0, 10), usageKey = 'usage:' + owner + ':' + day;
@@ -241,10 +244,16 @@ export default {
     let system = await env.OT_FORM.get(PROMPT_KEYS[promptKey]);
     if (!system) return fail(500, 'ההוראות ל-Claude עוד לא הוגדרו ב-Worker (' + PROMPT_KEYS[promptKey] + ').', ch);
 
-    if (kind === 'polish'){
+    if (kind === 'refine'){
+      const actionText = await env.OT_FORM.get('prompt:refine:' + req.action);
+      if (!actionText) return fail(500, 'ההוראות ל-Claude עוד לא הוגדרו ב-Worker (prompt:refine:' + req.action + ').', ch);
+      system += '\n\n' + actionText;
+    }
+    // דוגמאות מהמאגר: בניסוח, ובעריכה מהירה מסוג הרחבה
+    if (kind === 'polish' || (kind === 'refine' && req.action === 'expand')){
       let bank = null;
       try { bank = JSON.parse(await env.OT_FORM.get(BANK_KEY, {cacheTtl: 60}) || 'null'); } catch(e){ bank = null; }   // בנק פגום: ממשיכים בלי דוגמאות
-      system += examplesBlock(pickExamples(bank, cleanCtx(req.ctx), promptKey));
+      system += examplesBlock(pickExamples(bank, cleanCtx(req.ctx), kind === 'polish' ? promptKey : 'inst'));
     }
 
     const model = ALLOWED_MODELS.includes(req.model) ? req.model : MODELS[kind];

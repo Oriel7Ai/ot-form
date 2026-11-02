@@ -648,6 +648,37 @@ test('דף הניהול: כניסה בקוד, הצגת התור והמאגר, ו
   await ctx.close();
 });
 
+test('עריכה מהירה: בחירת פעולה בשדה, שליחה בלי השם, החלפת הטקסט, אזהרה על מספר שחסר, וביטול', async b => {
+  const page = await fresh(b);
+  await page.fill('#name', 'נועה');
+  await page.evaluate(() => { $('beery_vmi_p').value = '12'; chipInput('fm', 'midNo').checked = true; update(); });
+  let reply = {text: 'בתחום המוטוריקה העדינה- [שם] מתקשה בחציית קו האמצע, וב-BEERY קיבלה ציון באחוזון 12.'};
+  const sent = await mockClaude(page, null);
+  await page.unroute(WORKER);
+  await page.route(WORKER, r => { sent.push(JSON.parse(r.request().postData())); r.fulfill({status: 200, contentType: 'text/event-stream', body:
+    'data: ' + JSON.stringify({type:'content_block_delta', index:0, delta:{type:'text_delta', text: JSON.stringify(reply)}}) + '\n\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n'}); });
+  await tab(page, 'st_review');
+  const before = await out(page, 'f_fm');
+  assert.ok(await page.$('[data-refine="f_fm"]'));
+  assert.strictEqual(await page.$('[data-refine="goals"]'), null);   // רק בשדות שאפשר לנסח
+  await page.selectOption('[data-refine="f_fm"]', 'short');
+  assert.match(await page.textContent('.sendprev'), /השדה: ממצאי האבחון - מוטוריקה עדינה וגרפומוטוריקה/);
+  await page.click('[data-send="yes"]'); await page.waitForSelector('#undoRefine');
+  assert.deepStrictEqual([sent[0].kind, sent[0].action, sent[0].ctx.fields], ['refine', 'short', ['f_fm']]);
+  assert.ok(!sent[0].user.includes('נועה'));
+  assert.strictEqual(await out(page, 'f_fm'), 'בתחום המוטוריקה העדינה- נועה מתקשה בחציית קו האמצע, וב-BEERY קיבלה ציון באחוזון 12.');
+  assert.match(await page.textContent('#bd_f_fm'), /נוסח ע"י Claude/);
+  assert.strictEqual(await page.$eval('[data-refine="f_fm"]', e => e.value), '');
+  await page.click('#undoRefine');
+  assert.strictEqual(await out(page, 'f_fm'), before);
+  // תשובה שהשמיטה את הציון: אזהרה
+  reply = {text: 'בתחום המוטוריקה העדינה- [שם] מתקשה בחציית קו האמצע.'};
+  await page.selectOption('[data-refine="f_fm"]', 'parents');
+  await page.click('[data-send="yes"]'); await page.waitForSelector('#undoRefine');
+  assert.match(await page.textContent('#status'), /חסרים פרטים מהמקור: 12/);
+  assert.match(await page.textContent('#bd_f_fm'), /חסרים פרטים/);
+});
+
 test('קשר שסומן [לבדיקה]: הודעה, תג, בדיקה לפני ייצוא ואישור לפני ייצוא', async b => {
   const page = await fresh(b);
   await page.evaluate(() => { store(STYLE_STORE, 'icf'); styleSync(); chipInput('fm', 'midNo').checked = true; update(); });
