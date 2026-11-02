@@ -86,6 +86,47 @@ test('בקשה לא תקינה או גדולה מדי נדחית', async w => {
   assert.strictEqual((await w.fetch(req({kind: 'polish', user: 'א'.repeat(450000)}), makeEnv())).status, 413);
 });
 
+const BANK = [
+  {id: 'fm-young', field: 'f_fm', age: [3, 4.5], tools: ['obs'], style: 'any', text: 'דוגמה מוטוריקה עדינה לגיל צעיר'},
+  {id: 'fm-beery', field: 'f_fm', age: [4, 6.5], tools: ['beery', 'obs'], style: 'any', text: 'דוגמה מוטוריקה עדינה עם Beery'},
+  {id: 'fm-plain', field: 'f_fm', age: [4, 6.5], tools: ['obs'], style: 'any', text: 'דוגמה מוטוריקה עדינה בלי Beery'},
+  {id: 'sens', field: 'f_sens', age: [3, 8], tools: ['sp2'], style: 'any', text: 'דוגמה ויסות חושי'},
+  {id: 'sum-inst', field: 'summary', age: [4, 7], tools: [], style: 'inst', text: 'דוגמה סיכום בסגנון המכון'},
+];
+
+test('בנק ניסוחים: לכל שדה הדוגמה שמתאימה לגיל ולכלי ההערכה, ורק בסגנון המתאים', async w => {
+  const env = makeEnv({DAILY_LIMIT: '50'}); env.OT_FORM.kv.set('bank:v1', JSON.stringify(BANK));
+  await w.fetch(req({kind: 'polish', style: 'inst', user: 'x', ctx: {age: 5, fields: ['f_fm', 'f_sens', 'summary', 'f_gm'], tools: ['beery', 'sp2']}}), env);
+  const sys = upstream.body.system;
+  assert.match(sys, /^הוראות סגנון המכון\n\nדוגמאות לניסוח/);
+  assert.ok(sys.includes('דוגמה מוטוריקה עדינה עם Beery') && !sys.includes('בלי Beery') && !sys.includes('לגיל צעיר'));
+  assert.ok(sys.includes('— ויסות חושי —\nדוגמה ויסות חושי'));
+  assert.ok(sys.includes('דוגמה סיכום בסגנון המכון'));
+  assert.match(sys, /אל תעתיק מהן ממצאים/);
+  // סגנון ICF: דוגמת הסיכום של סגנון המכון לא נכנסת
+  await w.fetch(req({kind: 'polish', style: 'icf', user: 'x', ctx: {age: 5, fields: ['summary', 'f_fm'], tools: []}}), env);
+  assert.ok(!upstream.body.system.includes('דוגמה סיכום') && upstream.body.system.includes('— מוטוריקה עדינה וגרפומוטוריקה —'));
+  // גיל מחוץ לטווח של כל הדוגמאות: בלי דוגמאות
+  await w.fetch(req({kind: 'polish', user: 'x', ctx: {age: 12, fields: ['f_fm'], tools: []}}), env);
+  assert.strictEqual(upstream.body.system, 'הוראות סגנון המכון');
+});
+
+test('בנק ניסוחים: בלי בנק, בנק פגום, ctx לא תקין או שליפה, ההוראות לא משתנות', async w => {
+  const env = makeEnv({DAILY_LIMIT: '50'});
+  await w.fetch(req({kind: 'polish', user: 'x', ctx: {age: 5, fields: ['f_fm']}}), env);
+  assert.strictEqual(upstream.body.system, 'הוראות סגנון המכון');
+  env.OT_FORM.kv.set('bank:v1', '{not json');
+  assert.strictEqual((await w.fetch(req({kind: 'polish', user: 'x', ctx: {age: 5, fields: ['f_fm']}}), env)).status, 200);
+  assert.strictEqual(upstream.body.system, 'הוראות סגנון המכון');
+  env.OT_FORM.kv.set('bank:v1', JSON.stringify(BANK));
+  await w.fetch(req({kind: 'polish', user: 'x', ctx: {age: 'abc', fields: ['__proto__', 'constructor', 'evil'], tools: ['<script>']}}), env);
+  assert.strictEqual(upstream.body.system, 'הוראות סגנון המכון');
+  await w.fetch(req({kind: 'extract', user: 'x', ctx: {age: 5, fields: ['f_fm']}}), env);
+  assert.strictEqual(upstream.body.system, 'הוראות שליפה');
+  const m = await import(path.resolve(__dirname, '..', 'worker', 'index.js'));
+  assert.deepStrictEqual(m.cleanCtx({age: 5.5, fields: ['f_fm', 'x'], tools: ['beery', 'BAD TOOL']}), {age: 5.5, fields: ['f_fm'], tools: ['beery']});
+});
+
 (async () => {
   const w = (await import(path.resolve(__dirname, '..', 'worker', 'index.js'))).default;
   let fail = 0;
