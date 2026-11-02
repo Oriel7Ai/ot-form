@@ -93,8 +93,10 @@ npx wrangler deploy
 **הסדר חשוב.** ברגע שהריפו פרטי, האתר ב-GitHub Pages יורד, כי בחשבון החינמי של GitHub אפשר לפרסם אתר רק מריפו ציבורי. לכן קודם מקימים את האתר החדש, ורק אחר כך סוגרים את הריפו.
 
 1. **הקמת האתר החדש:** Cloudflare ← **Workers & Pages** ← **Create** ← **Pages** ← **Connect to Git**. בוחרים את הריפו `ot-form`, ובהגדרות הבנייה:
-   - **Build command:** ריק
-   - **Output directory:** `/`
+   - **Build command:** `sh build.sh` (מעתיק לתיקייה `dist` רק את קובצי האתר, בלי הבדיקות וקוד ה-Worker)
+   - **Build output directory:** `dist`
+   - **Environment variables:** `SKIP_DEPENDENCY_INSTALL` = `1` (לבנייה לא צריך להתקין כלום)
+   - **כותרות אבטחה:** נקבעות בקובץ `_headers`, ו-Cloudflare Pages מחיל אותן אוטומטית.
 2. **בדיקת הכתובת החדשה:** למשל `https://ot-form.pages.dev`. מוודאים שהטופס נטען ועובד.
 3. **Google:** ב-Google Cloud Console, במזהה הכניסה של הטופס (OAuth Client ID), מוסיפים את הכתובת החדשה ל-**Authorized JavaScript origins**. בלי זה השמירה בענן לא תעבוד באתר החדש.
 4. **ה-Worker:** מוסיפים את הכתובת החדשה ל-`ALLOWED_ORIGINS`.
