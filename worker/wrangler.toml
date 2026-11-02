@@ -6,7 +6,7 @@ compatibility_date = "2026-10-01"
 
 [vars]
 # הכתובות שמהן מותר לפנות ל-Worker, מופרדות בפסיק
-ALLOWED_ORIGINS = "https://oriel7ai.github.io"
+ALLOWED_ORIGINS = "https://oriel7ai.github.io,https://ot-form.pages.dev"
 # מספר הבקשות המרבי ליום לכל קוד גישה
 DAILY_LIMIT = "60"
 
