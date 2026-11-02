@@ -1643,7 +1643,7 @@ async function callClaude(user, onProgress, opts){
   opts = opts || {};
   const model = opts.model || getModel();
   const headers = {'content-type': 'application/json', 'x-ot-code': accessCode()};
-  const body = {kind: opts.kind || 'polish', style: opts.style || 'inst', user, model, format: opts.format};
+  const body = {kind: opts.kind || 'polish', style: opts.style || 'inst', user, model, format: opts.format, ctx: opts.ctx};
   let res;
   try { res = await fetch(PROXY.url, {method:'POST', headers, body: JSON.stringify(body)}); }
   catch (e){ throw new Error('אין חיבור ל-Claude. בדקי את חיבור האינטרנט.'); }
@@ -2146,11 +2146,15 @@ async function polish(){
   if (leak){ $('status').innerHTML = '<div class="warnbox">הניסוח בוטל: נמצא שם בטקסט שעמד להישלח. בדקי את השדות.</div>'; return; }
   const user = 'מגדר: ' + (val('gender') === 'f' ? 'בת' : 'בן') + '. קבוצת גיל: ' + (isToddler() ? 'פעוט' : 'ילד') + '.\nהשדות:\n' + JSON.stringify(payload, null, 2);
   if (!claudeReady()){ openKeyPanel(polish); return; }
-  const preview = user.split('\n')[0] + '\n\n' + Object.keys(payload).map(k => '— ' + fieldTitle(k) + ' —\n' + payload[k]).join('\n\n');
+  // לבחירת דוגמאות מתאימות מבנק הניסוחים ב-Worker: גיל מעוגל לחצי שנה, השדות שנשלחים וכלי ההערכה. בלי פרטים מזהים.
+  const a = ageYears(), ctx = {age: a === null ? null : Math.round(a * 2) / 2, fields: Object.keys(payload), tools: chips('tools')};
+  const preview = user.split('\n')[0] + '\nלבחירת דוגמאות ניסוח נשלחים גם: ' + (ctx.age === null ? 'בלי גיל' : 'גיל משוער ' + ctx.age) +
+    (ctx.tools.length ? ', כלי הערכה: ' + ctx.tools.map(t => (OPT.tools && OPT.tools[t] ? OPT.tools[t].label : t)).join(', ') : '') + '.\n\n' +
+    Object.keys(payload).map(k => '— ' + fieldTitle(k) + ' —\n' + payload[k]).join('\n\n');
   if (!(await confirmSend('ניסוח בעזרת Claude', preview))) return;
   const btn = $('polish'); btn.disabled = true; btn.textContent = 'מנסח...';
   try {
-    const obj = parseJsonReply(await callClaude(user, n => { btn.textContent = 'מנסח... (' + n + ' תווים)'; }, {kind: 'polish', style: getStyle()}));
+    const obj = parseJsonReply(await callClaude(user, n => { btn.textContent = 'מנסח... (' + n + ' תווים)'; }, {kind: 'polish', style: getStyle(), ctx}));
     // שומרים את המצב הקודם של כל שדה, כדי שאפשר יהיה לבטל את הניסוח
     const before = {};
     let n = 0;

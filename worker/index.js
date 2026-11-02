@@ -12,6 +12,53 @@ const MAX_TOKENS = 32000;
 const MAX_BODY = 400000;   // בתים: שליפה של עד 100,000 תווים בעברית, יחד עם רשימת השדות
 const PROMPT_KEYS = {inst: 'prompt:inst', icf: 'prompt:icf', extract: 'prompt:extract'};
 
+// ---- בנק הניסוחים המשותף (KV, מפתח bank:v1): פסקאות לדוגמה לפי שדה, גיל וכלי הערכה.
+// בניסוח, ה-Worker בוחר את הדוגמאות שמתאימות לבקשה ומצרף אותן להוראות, כדי ש-Claude יכתוב באותו סגנון ועומק.
+// כל רשומה: {id, field, age: [מגיל, עד גיל] בשנים, tools: [...], style: 'inst' | 'icf' | 'any', text}
+const BANK_KEY = 'bank:v1';
+const BANK_FIELDS = {background: 'רקע התפתחותי ורפואי', prev: 'טיפולים בעבר ובהווה', family: 'רקע משפחתי',
+  parents: 'דיווח ההורים והילד', school: 'דיווח מסגרת חינוכית', f_beh: 'התנהגות ושיתוף פעולה', f_gm: 'מוטוריקה גסה',
+  f_fm: 'מוטוריקה עדינה וגרפומוטוריקה', f_wr: 'כתיבה', f_cog: 'תפיסה וחשיבה', f_play: 'משחק', f_sens: 'ויסות חושי', summary: 'סיכום'};
+const BANK_PER_FIELD = 1, BANK_MAX = 6;
+
+// מה שהטופס שולח על הבקשה, בלי פרטים מזהים: גיל מעוגל, השדות שיש בהם טקסט וכלי ההערכה שסומנו
+export function cleanCtx(c){
+  c = c && typeof c === 'object' ? c : {};
+  const age = Number(c.age);
+  return {
+    age: Number.isFinite(age) && age >= 0 && age <= 21 ? age : null,
+    fields: (Array.isArray(c.fields) ? c.fields : []).filter(f => Object.hasOwn(BANK_FIELDS, f)).slice(0, 20),
+    tools: (Array.isArray(c.tools) ? c.tools : []).filter(t => typeof t === 'string' && /^[a-z0-9_]{1,16}$/.test(t)).slice(0, 20),
+  };
+}
+
+// לכל שדה בבקשה: הדוגמה המתאימה ביותר (גיל, ואז כלי הערכה משותפים), עד BANK_MAX בסך הכול
+export function pickExamples(bank, ctx, style){
+  if (!Array.isArray(bank) || !ctx.fields.length) return [];
+  const out = [];
+  for (const field of ctx.fields){
+    const scored = bank
+      .filter(e => e && e.field === field && typeof e.text === 'string' && e.text.trim() && (!e.style || e.style === 'any' || e.style === style))
+      .map(e => {
+        const inAge = ctx.age === null || !Array.isArray(e.age) || (ctx.age >= e.age[0] && ctx.age <= e.age[1]);
+        const tools = (e.tools || []).filter(t => ctx.tools.includes(t)).length;
+        return {e, score: (inAge ? 10 : 0) + tools};
+      })
+      .filter(x => x.score >= 10 || ctx.age === null)
+      .sort((a, b) => b.score - a.score || String(a.e.id).localeCompare(String(b.e.id)));
+    out.push(...scored.slice(0, BANK_PER_FIELD).map(x => x.e));
+    if (out.length >= BANK_MAX) break;
+  }
+  return out.slice(0, BANK_MAX);
+}
+
+export function examplesBlock(examples){
+  if (!examples.length) return '';
+  return '\n\nדוגמאות לניסוח מהבנק של המכון. הן ממחישות סגנון, עומק ומבנה בלבד: אל תעתיק מהן ממצאים, ציונים, מספרים או פרטים שלא מופיעים בשדות שקיבלת. ' +
+    'הדוגמאות כתובות בלשון זכר; שמור על המגדר שצוין בבקשה.\n' +
+    examples.map(e => '\n— ' + BANK_FIELDS[e.field] + ' —\n' + e.text.trim()).join('\n');
+}
+
 // "שם=קוד" בכל שורה. מחזיר את השם, או null אם הקוד לא קיים.
 export function codeOwner(codes, code){
   if (!code || code.length < 8) return null;
@@ -54,8 +101,14 @@ export default {
     const used = Number(await env.OT_FORM.get(usageKey)) || 0, limit = Number(env.DAILY_LIMIT) || 60;
     if (used >= limit) return fail(429, 'הגעת למספר הבקשות היומי (' + limit + '). אפשר להמשיך מחר.', ch);
 
-    const system = await env.OT_FORM.get(PROMPT_KEYS[promptKey]);
+    let system = await env.OT_FORM.get(PROMPT_KEYS[promptKey]);
     if (!system) return fail(500, 'ההוראות ל-Claude עוד לא הוגדרו ב-Worker (' + PROMPT_KEYS[promptKey] + ').', ch);
+
+    if (kind === 'polish'){
+      let bank = null;
+      try { bank = JSON.parse(await env.OT_FORM.get(BANK_KEY, {cacheTtl: 60}) || 'null'); } catch(e){ bank = null; }   // בנק פגום: ממשיכים בלי דוגמאות
+      system += examplesBlock(pickExamples(bank, cleanCtx(req.ctx), promptKey));
+    }
 
     const model = ALLOWED_MODELS.includes(req.model) ? req.model : MODELS[kind];
     const body = {model, max_tokens: MAX_TOKENS, stream: true, system, messages: [{role: 'user', content: req.user}]};

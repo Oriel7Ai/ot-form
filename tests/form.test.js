@@ -549,6 +549,21 @@ test('סגנון הניסוח לא נשמר בטיוטה', async b => {
   assert.strictEqual(await page.evaluate(() => 'polishStyle' in collectState().ctl), false);   // לא חלק מהטיוטה
 });
 
+test('ניסוח: נשלחים גיל מעוגל, השדות וכלי ההערכה לבחירת דוגמאות מהבנק, ומוצגים לפני השליחה', async b => {
+  const page = await fresh(b);
+  await page.evaluate(() => { $('ageY').value = '5'; $('ageM').value = '4'; chipInput('tools', 'beery').checked = true; chipInput('fm', 'midNo').checked = true; update(); });
+  const sent = await mockClaude(page, {f_fm: 'נצפה קושי בחציית קו האמצע.'});
+  await tab(page, 'st_review');
+  await page.click('#polish');
+  assert.match(await page.textContent('.sendprev'), /לבחירת דוגמאות ניסוח נשלחים גם: גיל משוער 5\.5, כלי הערכה: Beery\./);
+  await page.click('[data-send="yes"]'); await page.waitForSelector('#undoPolish');
+  const ctx = sent[0].ctx;
+  assert.strictEqual(ctx.age, 5.5);
+  assert.ok(ctx.tools.includes('beery'));
+  assert.ok(ctx.fields.includes('f_fm'));
+  assert.ok(ctx.fields.every(f => /^[a-z_]+$/.test(f)));
+});
+
 test('קשר שסומן [לבדיקה]: הודעה, תג, בדיקה לפני ייצוא ואישור לפני ייצוא', async b => {
   const page = await fresh(b);
   await page.evaluate(() => { store(STYLE_STORE, 'icf'); styleSync(); chipInput('fm', 'midNo').checked = true; update(); });
