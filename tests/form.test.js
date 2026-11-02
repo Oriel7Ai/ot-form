@@ -564,6 +564,45 @@ test('ניסוח: נשלחים גיל מעוגל, השדות וכלי ההערכ
   assert.ok(ctx.fields.every(f => /^[a-z_]+$/.test(f)));
 });
 
+test('תרומה לבנק: פסקאות מהדוח ומדוח אחר, הסרת שמות, אישור חובה, ושליחה ל-Worker', async b => {
+  const page = await fresh(b);
+  await page.fill('#name', 'נועה');
+  await page.evaluate(() => { $('ageY').value = '5'; $('ageM').value = '2'; chipInput('tools', 'beery').checked = true; chipInput('fm', 'midNo').checked = true; update(); });
+  await page.evaluate(() => store(ACCESS_STORE, 'test-code-1234'));
+  const sent = [];
+  await page.route(WORKER, r => { sent.push(JSON.parse(r.request().postData())); r.fulfill({status: 200, contentType: 'application/json', body: '{"ok":true,"count":2}'}); });
+  await page.click('#more summary'); await page.click('#contribBtn');
+  // מהדוח הנוכחי: רק פסקאות באורך 30 תווים לפחות, והשם מוחלף בתגית
+  const cur = await page.$$eval('#cbCur .cbrow', rows => rows.map(r => [r.querySelector('[data-cb-field]').value, r.querySelector('[data-cb-text]').value]));
+  const sum = cur.find(r => r[0] === 'summary');
+  assert.ok(sum && !sum[1].includes('נועה') && sum[1].includes('[שם]'));
+  assert.ok(cur.every(r => r[1].length >= 30));
+  // מדוח אחר: שמות מוסרים, והתחום מנוחש לפי התוכן
+  await page.fill('#cbPaste', 'בתחום המוטוריקה הגסה- דני מתקשה בשיווי משקל ובקפיצות על רגל אחת, ונעזר בתיווך.\n\nקצר');
+  await page.fill('#cbNames', 'דני');
+  await page.click('[data-cb="add"]');
+  const other = await page.$$eval('#cbOther .cbrow', rows => rows.map(r => [r.querySelector('[data-cb-field]').value, r.querySelector('[data-cb-text]').value]));
+  assert.strictEqual(other.length, 1);
+  assert.strictEqual(other[0][0], 'f_gm');
+  assert.ok(!other[0][1].includes('דני') && other[0][1].includes('[הוסר]'));
+  // סימון שתי פסקאות; בלי אישור, לא נשלח
+  await page.check('#cbCur .cbrow:has([data-cb-field] option[value="summary"]:checked) [data-cb-on]');
+  await page.check('#cbOther .cbrow [data-cb-on]');
+  await page.click('[data-cb="send"]');
+  assert.match(await page.textContent('.cbwarn'), /יש לאשר/);
+  // שם שנכתב ידנית בטקסט אחרי ההוספה מוחלף בתגית לפני השליחה
+  await page.fill('#cbOther [data-cb-text]', 'בתחום המוטוריקה הגסה- נועה מתקשה בשיווי משקל, ודני נעזר בתיווך בקפיצות.');
+  await page.check('#cbAttest'); await page.click('[data-cb="send"]');
+  assert.match(await page.textContent('.sendprev'), /\[שם\] מתקשה בשיווי משקל/);
+  await page.click('[data-send="yes"]');
+  await page.waitForFunction(() => /נשלחו לבדיקה/.test($('msg').textContent));
+  assert.strictEqual(sent.length, 1);
+  const body = sent[0];
+  assert.deepStrictEqual([body.kind, body.attest, body.age, body.tools.includes('beery')], ['contribute', true, 5, true]);
+  assert.deepStrictEqual(body.items.map(i => i.field).sort(), ['f_gm', 'summary']);
+  assert.ok(body.items.every(i => !/נועה|דני/.test(i.text)));
+});
+
 test('קשר שסומן [לבדיקה]: הודעה, תג, בדיקה לפני ייצוא ואישור לפני ייצוא', async b => {
   const page = await fresh(b);
   await page.evaluate(() => { store(STYLE_STORE, 'icf'); styleSync(); chipInput('fm', 'midNo').checked = true; update(); });
