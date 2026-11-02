@@ -1515,10 +1515,17 @@ const dirty = {};   // שדות שנערכו ידנית או נוסחו ע"י Cl
 const aiDone = {};
 function renderOut(){
   $('out').innerHTML = FIELDS.map(f => '<div class="of" id="of_' + f[0] + '"><div class="t"><b>' + esc(f[1]) + '</b><span class="badge" id="bd_' + f[0] + '"></span>' +
-    '<button data-reset="' + f[0] + '" hidden>חזרה לאוטומטי</button><button data-copy="' + f[0] + '">העתקה</button><button class="addtxt" data-addtxt="' + f[0] + '" type="button">+ הוספת טקסט</button></div>' +
+    '<button data-reset="' + f[0] + '" hidden>חזרה לאוטומטי</button>' +
+    (POLISH_KEYS.includes(f[0]) ? '<select data-refine="' + f[0] + '" aria-label="עריכה מהירה: ' + esc(f[1]) + '"><option value="">עריכה מהירה…</option>' +
+      REFINE.map(([k, l]) => '<option value="' + k + '">' + l + '</option>').join('') + '</select>' : '') +
+    '<button data-copy="' + f[0] + '">העתקה</button><button class="addtxt" data-addtxt="' + f[0] + '" type="button">+ הוספת טקסט</button></div>' +
     '<textarea id="o_' + f[0] + '" aria-label="' + esc(f[1]) + '"></textarea></div>').join('');
   $('out').addEventListener('input', e => {
     if (e.target.id && e.target.id.startsWith('o_')){ const k = e.target.id.slice(2); if (!dirty[k] || aiDone[k]) TELEMETRY.field(k, 'dirty'); dirty[k] = true; aiDone[k] = false; delete aiWarn[k]; markField(k); if (polishUndo) delete polishUndo[k]; updateExtras(); saveSessionSoon(); }
+  });
+  $('out').addEventListener('change', e => {
+    const k = e.target.getAttribute && e.target.getAttribute('data-refine');
+    if (k && e.target.value){ const act = e.target.value; e.target.value = ''; refine(k, act); }
   });
   $('out').addEventListener('click', e => {
     const c = e.target.getAttribute('data-copy'), r = e.target.getAttribute('data-reset');
@@ -1821,7 +1828,7 @@ async function callClaude(user, onProgress, opts){
   opts = opts || {};
   const model = opts.model || getModel();
   const headers = {'content-type': 'application/json', 'x-ot-code': accessCode()};
-  const body = {kind: opts.kind || 'polish', style: opts.style || 'inst', user, model, format: opts.format, ctx: opts.ctx};
+  const body = {kind: opts.kind || 'polish', style: opts.style || 'inst', action: opts.action, user, model, format: opts.format, ctx: opts.ctx};
   let res;
   try { res = await fetch(PROXY.url, {method:'POST', headers, body: JSON.stringify(body)}); }
   catch (e){ throw new Error('אין חיבור ל-Claude. בדקי את חיבור האינטרנט.'); }
@@ -2357,6 +2364,44 @@ async function polish(){
   } catch (err){
     $('status').innerHTML = '<div class="warnbox">הניסוח נכשל: ' + esc(err.message) + ' הטקסט האוטומטי נשאר כמו שהוא.</div>';
   } finally { btn.disabled = false; btn.textContent = 'ניסוח בעזרת Claude'; }
+}
+// ---- עריכה מהירה של שדה אחד: קיצור, הרחבה, הדגשת חוזקות, או שפה פשוטה להורים.
+// ההוראות לכל פעולה נמצאות ב-Worker. התוצאה עוברת את אותה בדיקה כמו ניסוח (כל מספר ותגית נשמרו), ואפשר לבטל.
+const REFINE = [['short', 'קיצור'], ['expand', 'הרחבה'], ['strengths', 'הדגשת חוזקות'], ['parents', 'שפה פשוטה להורים']];
+let refineUndo = null;   // {k, t, dirty, ai}
+async function refine(k, action){
+  const label = (REFINE.find(r => r[0] === action) || [])[1];
+  const text = $('o_' + k).value.trim();
+  if (!label) return;
+  if (text.length < 20){ flash('אין מספיק טקסט בשדה לעריכה'); return; }
+  if (!claudeReady()){ openKeyPanel(() => refine(k, action)); return; }
+  const payload = hideNames(text);
+  if (nameList().some(x => payload.includes(x.name))){ $('status').innerHTML = '<div class="warnbox">העריכה בוטלה: נמצא שם בטקסט שעמד להישלח. בדקי את השדה.</div>'; return; }
+  const user = 'מגדר: ' + (val('gender') === 'f' ? 'בת' : 'בן') + '. קבוצת גיל: ' + (isToddler() ? 'פעוט' : 'ילד') + '.\nהשדה: ' + fieldTitle(k) + '\nהטקסט:\n' + payload;
+  const a = ageYears(), ctx = {age: a === null ? null : Math.round(a * 2) / 2, fields: [k], tools: chips('tools')};
+  if (!(await confirmSend('עריכה מהירה: ' + label, user))) return;
+  const sel = document.querySelector('[data-refine="' + k + '"]'); sel.disabled = true;
+  $('status').innerHTML = '<div class="okbox" role="status">' + esc(label) + ': ' + esc(fieldTitle(k)) + '...</div>';
+  try {
+    const obj = parseJsonReply(await callClaude(user, null, {kind: 'refine', action, ctx}));
+    if (typeof obj.text !== 'string' || !obj.text.trim()) throw new Error('התשובה של Claude לא כללה טקסט.');
+    refineUndo = {k, t: $('o_' + k).value, dirty: !!dirty[k], ai: !!aiDone[k]};
+    const miss = polishMissing(payload, obj.text); if (miss.length) aiWarn[k] = miss; else delete aiWarn[k];
+    $('o_' + k).value = showNames(obj.text.trim()); dirty[k] = true; aiDone[k] = true; TELEMETRY.field(k, 'refine');
+    markField(k); autoSize($('o_' + k)); updateExtras(); saveSession();
+    $('status').innerHTML = '<div class="okbox">' + esc(label) + ' בוצע בשדה "' + esc(fieldTitle(k)) + '". זו טיוטה: קראי לפני ההדבקה ב-Cliks. ' +
+      '<button class="linkbtn" id="undoRefine" type="button">ביטול</button></div>' +
+      (miss.length ? '<div class="warnbox" role="alert"><b>חסרים פרטים מהמקור:</b> ' + esc(miss.map(showNames).join(', ')) + '</div>' : '');
+  } catch (err){
+    $('status').innerHTML = '<div class="warnbox">העריכה נכשלה: ' + esc(err.message) + ' הטקסט נשאר כמו שהוא.</div>';
+  } finally { sel.disabled = false; }
+}
+function undoRefine(){
+  if (!refineUndo) return;
+  const {k, t, dirty: d, ai} = refineUndo; refineUndo = null;
+  $('o_' + k).value = t; dirty[k] = d; aiDone[k] = ai; delete aiWarn[k]; TELEMETRY.field(k, 'refineUndo');
+  update(); saveSession();
+  $('status').innerHTML = '<div class="okbox">העריכה בוטלה. השדה חזר למה שהיה בו.</div>';
 }
 let polishUndo = null;   // {שדה: {t, dirty, ai}} מלפני הניסוח האחרון
 // בדיקה אחרי ניסוח: כל מספר וכל תגית ([שם], [תאריך]...) מהטקסט המקורי צריכים להופיע גם בטקסט המנוסח
@@ -3253,6 +3298,7 @@ $('copyAll').addEventListener('click', () => reviewGuard(FIELDS) && copyText(FIE
 $('resetAll').addEventListener('click', resetForm);
 $('status').addEventListener('click', e => {
   if (e.target.id === 'undoPolish') undoPolish();
+  if (e.target.id === 'undoRefine') undoRefine();
 });
 window.addEventListener('beforeunload', e => { saveSession(); if (hasContent()){ e.preventDefault(); e.returnValue = ''; } });
 window.addEventListener('pagehide', saveSession);

@@ -241,6 +241,24 @@ test('ניהול: אישור עם פרט מזהה נדחה, דחייה מוחק�
   assert.strictEqual(del2.total, 0);
 });
 
+test('עריכה מהירה: הוראה כללית ועוד הוראה לפעולה, דוגמאות מהמאגר רק בהרחבה, ופעולה לא מוכרת נדחית', async w => {
+  const env = makeEnv({DAILY_LIMIT: '50'});
+  env.OT_FORM.kv.set('prompt:refine', 'הוראות עריכה'); env.OT_FORM.kv.set('prompt:refine:short', 'לקצר'); env.OT_FORM.kv.set('prompt:refine:expand', 'להרחיב');
+  env.OT_FORM.kv.set('bank:v1', JSON.stringify(BANK));
+  const ctx = {age: 5, fields: ['f_fm'], tools: ['beery']};
+  assert.strictEqual((await w.fetch(req({kind: 'refine', action: 'short', user: 'x', ctx}), env)).status, 200);
+  assert.strictEqual(upstream.body.system, 'הוראות עריכה\n\nלקצר');
+  assert.strictEqual(upstream.body.model, 'claude-sonnet-5-5');
+  await w.fetch(req({kind: 'refine', action: 'expand', user: 'x', ctx}), env);
+  assert.match(upstream.body.system, /^הוראות עריכה\n\nלהרחיב\n\nדוגמאות לניסוח/);
+  assert.ok(upstream.body.system.includes('דוגמה מוטוריקה עדינה עם Beery'));
+  const bad = await w.fetch(req({kind: 'refine', action: 'rewrite-all', user: 'x'}), env);
+  assert.strictEqual(bad.status, 400);
+  const missing = await w.fetch(req({kind: 'refine', action: 'parents', user: 'x'}), env);
+  assert.strictEqual(missing.status, 500);
+  assert.match((await missing.json()).error.message, /prompt:refine:parents/);
+});
+
 (async () => {
   const w = (await import(path.resolve(__dirname, '..', 'worker', 'index.js'))).default;
   let fail = 0;
