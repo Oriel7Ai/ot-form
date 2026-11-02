@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- הדף מתקשר רק עם Claude (דרך ה-Worker המתווך ב-ot-form-proxy.oriel7ai.workers.dev, או ישירות ב-api.anthropic.com) ועם Google (כניסה ושמירה בענן). רכיב הכניסה של Google נטען עם הדף; נתונים נשלחים רק בלחיצה של המשתמשת. שום כתובת אחרת לא נגישה ממנו. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://accounts.google.com; script-src 'unsafe-inline' https://accounts.google.com/gsi/client; frame-src https://accounts.google.com; img-src data: 'self'; connect-src https://ot-form-proxy.oriel7ai.workers.dev https://api.anthropic.com https://www.googleapis.com https://accounts.google.com; manifest-src 'self'; worker-src 'self'">
+<!-- הדף מתקשר רק עם Claude (דרך ה-Worker המתווך ב-ot-form-proxy.oriel7ai.workers.dev) ועם Google (כניסה ושמירה בענן). רכיב הכניסה של Google נטען עם הדף; נתונים נשלחים רק בלחיצה של המשתמשת. שום כתובת אחרת לא נגישה ממנו. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline' https://accounts.google.com; script-src 'unsafe-inline' https://accounts.google.com/gsi/client; frame-src https://accounts.google.com; img-src data: 'self'; connect-src https://ot-form-proxy.oriel7ai.workers.dev https://www.googleapis.com https://accounts.google.com; manifest-src 'self'; worker-src 'self'">
 <link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <meta name="theme-color" content="#1e5aa8">
@@ -1547,47 +1547,25 @@ function update(){
 //  ניסוח בעזרת Claude (חיבור ישיר, אחרי הסתרת שמות ואישור)
 // =====================================================================
 // =====================================================================
-//  חיבור ישיר ל-Claude (בלי n8n). המפתח נשמר מוצפן בדפדפן ונפתח עם קוד.
+//  חיבור ל-Claude דרך ה-Worker המתווך (ראו PROXY למטה)
 // =====================================================================
-const API_URL = 'https://api.anthropic.com/v1/messages';
-const KEY_STORE = 'ot_form_api_key_v1';
 const MODEL_STORE = 'ot_form_model_v1';
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
-// מודלים שתומכים במעבר אוטומטי למודל חלופי כשהבקשה נדחית בטעות ע"י מסנני הבטיחות
-const FALLBACK_MODELS = ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-opus-5', 'claude-fable-5-1'];
-const MAX_TOKENS = 32000;
-let apiKey = null;        // בזיכרון בלבד, נמחק בסגירת הדף
-let keyAfter = null;      // פעולה להמשיך אחרי פתיחת המפתח
+let keyAfter = null;      // פעולה להמשיך אחרי הזנת קוד הגישה
 
 const b64 = u8 => { let s = ''; u8.forEach(c => s += String.fromCharCode(c)); return btoa(s); };
 const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 function store(k, v){ try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); return true; } catch(e){ return false; } }
 function load(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
-function hasStoredKey(){ return !!load(KEY_STORE); }
 function getModel(){ return load(MODEL_STORE) || DEFAULT_MODEL; }
 
 async function deriveAes(code, salt){
   const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey({name:'PBKDF2', salt, iterations:310000, hash:'SHA-256'}, base, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
 }
-async function saveKey(key, code){
-  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
-  const k = await deriveAes(code, salt);
-  const ct = new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM', iv}, k, new TextEncoder().encode(key)));
-  if (!store(KEY_STORE, JSON.stringify({v:1, salt:b64(salt), iv:b64(iv), ct:b64(ct)}))) throw new Error('הדפדפן לא מאפשר שמירה. המפתח יישאר פתוח רק עד סגירת הדף.');
-}
-async function unlockKey(code){
-  const s = JSON.parse(load(KEY_STORE));
-  const k = await deriveAes(code, unb64(s.salt));
-  const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv:unb64(s.iv)}, k, unb64(s.ct));   // נכשל אם הקוד שגוי
-  return new TextDecoder().decode(pt);
-}
-
 function keyStatus(){
   const b = $('keyBtn');
-  if (PROXY.url){ b.textContent = accessCode() ? 'קוד גישה: מוגדר' : 'קוד גישה'; b.classList.toggle('ok', !!accessCode()); return; }
-  if (apiKey){ b.textContent = 'מפתח: פתוח'; b.classList.add('ok'); }
-  else { b.textContent = hasStoredKey() ? 'מפתח: נעול' : 'הגדרת מפתח API'; b.classList.remove('ok'); }
+  b.textContent = accessCode() ? 'קוד גישה: מוגדר' : 'קוד גישה'; b.classList.toggle('ok', !!accessCode());
 }
 let modalReturn = null;   // האלמנט שהפוקוס יחזור אליו כשהחלון נסגר
 function openModal(html){
@@ -1612,27 +1590,7 @@ function trapFocus(e){
   else if (!$('modal').contains(document.activeElement)){ e.preventDefault(); first.focus(); }
 }
 
-function openKeyPanel(after, msg){
-  if (PROXY.url) return openAccessPanel(after, msg);
-  keyAfter = after || null;
-  let h = '<h3>מפתח API של Claude</h3>';
-  if (apiKey){
-    h += '<p>המפתח פתוח, ויינעל כשתסגרי את הדף.</p><div class="mrow"><button class="btn" data-k="lock">נעילה עכשיו</button><button class="btn" data-k="forget">מחיקת המפתח השמור</button><button class="btn" data-k="close">סגירה</button></div>';
-  } else if (hasStoredKey()){
-    h += '<p>הקלידי את הקוד כדי לפתוח את המפתח השמור במחשב הזה.</p><input type="password" id="kCode" autocomplete="off" placeholder="קוד">' +
-      '<div class="mrow"><button class="btn primary" data-k="unlock">פתיחה</button><button class="btn" data-k="forget">שכחתי את הקוד / החלפת מפתח</button><button class="btn" data-k="close">ביטול</button></div>';
-  } else {
-    h += '<p>המפתח יישמר במחשב הזה בלבד, מוצפן בקוד שתבחרי. בפעמים הבאות תקלידי רק את הקוד.</p>' +
-      '<label class="lbl">מפתח API (מתחיל ב-sk-ant-)</label><input type="password" id="kKey" autocomplete="off">' +
-      '<label class="lbl">קוד (לפחות 6 תווים, עדיף עם אותיות)</label><input type="password" id="kCode" autocomplete="off">' +
-      '<label class="lbl">הקלדת הקוד שוב</label><input type="password" id="kCode2" autocomplete="off">' +
-      '<p class="hint">מומלץ ליצור ב-console.anthropic.com מפתח נפרד לטופס, עם תקרת הוצאה חודשית. הקוד מגן מפני שימוש מזדמן במחשב, לא מפני פריצה מכוונת.</p>' +
-      '<div class="mrow"><button class="btn primary" data-k="save">שמירה</button><button class="btn" data-k="close">ביטול</button></div>';
-  }
-  h += '<details class="adv"><summary>הגדרות מתקדמות</summary><label class="lbl">מודל</label><input type="text" id="kModel" value="' + esc(getModel()) + '"><p class="hint">ברירת המחדל: ' + DEFAULT_MODEL + '</p></details>';
-  if (msg) h += '<div class="warnbox" style="margin-top:10px">' + esc(msg) + '</div>';
-  openModal(h);
-}
+const openKeyPanel = (after, msg) => openAccessPanel(after, msg);
 
 async function keyAction(act){
   const v = id => ($(id) ? $(id).value.trim() : '');
@@ -1646,26 +1604,10 @@ async function keyAction(act){
       if (!store(ACCESS_STORE, c)) return openAccessPanel(keyAfter, 'הדפדפן לא מאפשר שמירה.');
       keyStatus(); closeModal(); const next = keyAfter; keyAfter = null; if (next) next(); return;
     }
-    if (act === 'lock'){ apiKey = null; keyStatus(); closeModal(); flash('המפתח ננעל'); return; }
-    if (act === 'forget'){
-      if (!confirm('למחוק את המפתח השמור מהמחשב הזה? תצטרכי להזין אותו מחדש.')) return;
-      store(KEY_STORE, null); apiKey = null; keyStatus(); openKeyPanel(keyAfter); return;
-    }
-    if (act === 'unlock'){
-      try { apiKey = await unlockKey(v('kCode')); } catch(e){ openKeyPanel(keyAfter, 'הקוד שגוי.'); return; }
-    }
-    if (act === 'save'){
-      const key = v('kKey'), c1 = v('kCode'), c2 = v('kCode2');
-      if (!/^sk-ant-/.test(key)) { openKeyPanel(keyAfter, 'המפתח לא נראה כמו מפתח של Anthropic (sk-ant-...).'); return; }
-      if (c1.length < 6) { openKeyPanel(keyAfter, 'הקוד צריך להיות לפחות 6 תווים.'); return; }
-      if (c1 !== c2) { openKeyPanel(keyAfter, 'שני הקודים לא זהים.'); return; }
-      try { await saveKey(key, c1); } catch(e){ flash(e.message); }
-      apiKey = key;
-    }
     keyStatus(); closeModal();
     const next = keyAfter; keyAfter = null;
     if (next) next();
-  } catch (e){ openKeyPanel(keyAfter, e.message); }
+  } catch (e){ openAccessPanel(keyAfter, e.message); }
 }
 
 // תצוגה מקדימה: מה בדיוק יוצא מהמחשב. השליחה רק אחרי אישור.
@@ -1680,44 +1622,36 @@ function confirmSend(title, text){
 
 // קריאה ל-Claude בהזרמה (stream), כדי להציג התקדמות ולא להיתקע על בקשות ארוכות.
 // onProgress מקבל את מספר התווים שהתקבלו עד עכשיו.
-// ---- Worker מתווך: כשמוגדרת כתובת, הבקשות עוברות דרכו עם קוד גישה אישי, וההוראות ל-Claude
-// נמצאות ב-Worker ולא כאן. כל עוד הכתובת ריקה, הטופס פונה ל-Claude ישירות עם מפתח API, כמו קודם.
+// ---- Worker מתווך: כל הבקשות ל-Claude עוברות דרכו עם קוד גישה אישי. מפתח ה-API וההוראות ל-Claude
+// נמצאים רק ב-Worker, ולא בדפדפן ולא בקוד הזה.
 const PROXY = {url: 'https://ot-form-proxy.oriel7ai.workers.dev'};
 const ACCESS_STORE = 'ot_form_access_v1';
 const accessCode = () => load(ACCESS_STORE) || '';
-const claudeReady = () => PROXY.url ? !!accessCode() : !!apiKey;
+const claudeReady = () => !!accessCode();
 function openAccessPanel(after, msg){
   keyAfter = after || null;
   openModal('<h3>קוד גישה</h3><p>הקוד האישי שקיבלת מאפשר להשתמש בניסוח ובשליפה בעזרת Claude. הוא נשמר בדפדפן הזה בלבד.</p>' +
     '<label class="lbl" for="aCode">קוד הגישה</label><input type="password" id="aCode" autocomplete="off" value="' + esc(accessCode()) + '">' +
     '<div class="mrow"><button class="btn primary" data-k="acc-save">שמירה</button>' + (accessCode() ? '<button class="btn" data-k="acc-forget">מחיקת הקוד</button>' : '') + '<button class="btn" data-k="close">ביטול</button></div>' +
+    '<details class="adv"><summary>הגדרות מתקדמות</summary><label class="lbl" for="kModel">מודל לניסוח</label><input type="text" id="kModel" value="' + esc(getModel()) + '"><p class="hint">ברירת המחדל: ' + DEFAULT_MODEL + '</p></details>' +
     (msg ? '<div class="warnbox" style="margin-top:10px">' + esc(msg) + '</div>' : ''));
 }
 
 // opts.model: מודל אחר מברירת המחדל; opts.format: מבנה תשובה מובטח (structured outputs);
 // opts.kind ('polish' / 'extract') ו-opts.style: לפיהם ה-Worker בוחר את ההוראות
-async function callClaude(system, user, onProgress, opts){
+async function callClaude(user, onProgress, opts){
   opts = opts || {};
   const model = opts.model || getModel();
-  let url = API_URL, headers, body;
-  if (PROXY.url){
-    url = PROXY.url;
-    headers = {'content-type': 'application/json', 'x-ot-code': accessCode()};
-    body = {kind: opts.kind || 'polish', style: opts.style || 'inst', user, model, format: opts.format};
-  } else {
-    headers = {'content-type':'application/json', 'x-api-key':apiKey, 'anthropic-version':'2023-06-01', 'anthropic-dangerous-direct-browser-access':'true'};
-    body = {model, max_tokens:MAX_TOKENS, stream:true, system, messages:[{role:'user', content:user}]};
-    if (opts.format) body.output_config = {format: opts.format};
-    if (FALLBACK_MODELS.includes(model)){ headers['anthropic-beta'] = 'server-side-fallback-2026-07-01'; body.fallbacks = 'default'; }
-  }
+  const headers = {'content-type': 'application/json', 'x-ot-code': accessCode()};
+  const body = {kind: opts.kind || 'polish', style: opts.style || 'inst', user, model, format: opts.format};
   let res;
-  try { res = await fetch(url, {method:'POST', headers, body: JSON.stringify(body)}); }
+  try { res = await fetch(PROXY.url, {method:'POST', headers, body: JSON.stringify(body)}); }
   catch (e){ throw new Error('אין חיבור ל-Claude. בדקי את חיבור האינטרנט.'); }
   if (!res.ok){
     const data = await res.json().catch(() => ({}));
     const m = (data.error && data.error.message) || '';
-    if (res.status === 401) throw new Error(PROXY.url ? 'קוד הגישה לא תקין או בוטל. פתחי את "קוד גישה" בתפריט "עוד".' : 'המפתח לא תקין או בוטל (401). פתחי את "הגדרת מפתח" והזיני מפתח חדש.');
-    if (res.status === 429 && PROXY.url && m) throw new Error(m);   // מגבלת השימוש היומית של ה-Worker
+    if (res.status === 401) throw new Error('קוד הגישה לא תקין או בוטל. פתחי את "קוד גישה" בתפריט "עוד".');
+    if (res.status === 429 && m) throw new Error(m);   // מגבלת השימוש היומית של ה-Worker
     if (res.status === 429) throw new Error('יותר מדי בקשות או שנגמרה המכסה (429). נסי שוב בעוד דקה, ובדקי את תקרת ההוצאה.');
     if (res.status === 529 || res.status >= 500) throw new Error('השרת של Claude עמוס כרגע (' + res.status + '). נסי שוב בעוד כמה דקות.');
     const err = new Error('Claude החזיר שגיאה ' + res.status + (m ? ': ' + m : '')); err.status = res.status; throw err;
@@ -2182,59 +2116,12 @@ function parseJsonReply(t){
 }
 function fieldTitle(k){ const f = FIELDS.find(x => x[0] === k); return f ? f[1] : k; }
 
-const STYLE_GUIDE = `אתה עוזר למרפאה בעיסוק במכון להתפתחות הילד בישראל לנסח שדות של דוח סיכום אבחון שמוזן למערכת Cliks.
-קיבלת שדות שכבר מכילים את הממצאים. התפקיד שלך הוא ללטש את הניסוח לפרוזה רציפה ומקצועית בסגנון של המכון, ולכתוב סיכום.
 
-כללי ברזל:
-1. אסור להוסיף ממצא, אבחנה, ציון או פרט שלא מופיע בשדות. אם שדה ריק, החזר אותו ריק.
-2. אסור לשנות ציונים, אחוזונים, זמנים או מספרים.
-3. תגיות כמו [שם], [שם2], [שם משפחה], [תאריך] הן פרטים שהוסרו. העתק אותן בדיוק כמו שהן, במקומות המתאימים.
-4. שמור על המגדר שצוין לאורך כל הטקסט.
-5. אל תקבע אבחנה רפואית. תאר תפקוד.
 
-סגנון המכון:
-- גוף שלישי, זמן הווה בתיאור תפקוד ("מראה", "נצפה", "ניכר", "בולט", "עולה רושם", "נראה כי"), עבר בתיאור מהלך האבחון ("הגיע", "שיתף פעולה").
-- משפטים קליניים, תמציתיים וחמים. תיאורים כמו "ילד מקסים", "ילדה מתוקה" מקובלים בפתיחה.
-- ניסוחים אופייניים: "תואם גיל", "בטווח הנורמה לגילו", "בהתאם למצופה בגילו", "לצד צורך בתיווך", "ייתכן גם על רקע קשבי", "עם זאת,".
-- רקע: נפתח במשפט "[שם] ילד מקסים בן 4.1. הגיע לאבחון בריפוי בעיסוק בהפניית ... בשל ...", ואחריו נתוני לידה, התפתחות ובריאות.
-- ממצאים: פסקה רציפה לכל תחום. אפשר להשתמש בתבנית "בתחום X- ..." כשמתאים.
-- Beery: "באבחון BEERY, בחלק הבודק אינטגרציה ויזו-מוטורית קיבל ציון באחוזון 30, בטווח הנורמה לגילו, מתחת לממוצע."
-- לפי הנחיות החברה הישראלית לריפוי בעיסוק: כשבשדות יש מידע על השפעת הקשיים על התפקוד וההשתתפות בבית ובמסגרת החינוכית, קשר אליו את הממצאים. אל תכתוב השפעה תפקודית שלא כתובה בשדות. הסיכום כולל את החוזקות ואת תחומי העניין של הילד, אם צוינו.
-- סיכום: קיבלת טיוטת סיכום. שמור על המבנה שלה: משפט הפתיחה, משפט על ההתנהגות ושיתוף הפעולה באבחון, ואחריו תחום אחר תחום בתבנית "בתחום המוטורי- ...", "בתחום התפיסה והחשיבה- ...".
-- בסיכום אסור להשמיט קושי, ממצא חריג או ציון מתחת לנורמה שמופיעים בטיוטה. אפשר לקצר ולאחד רק תיאורים של תפקוד תקין. בלי מידע שלא מופיע בממצאים.
-
-החזר אך ורק אובייקט JSON תקין עם אותם מפתחות שקיבלת, בלי טקסט נוסף.`;
-
-// סגנון חלופי: דוח אינטגרטיבי לפי מודל ה-ICF, בגישה מבוססת חוזקות. אותם כללי ברזל כמו בסגנון המכון.
-// קשר בין ממצא לתפקוד ש-Claude מסיק בעצמו נעטף ב-[לבדיקה: ...], והמאבחנת מאשרת או מוחקת אותו.
-const ICF_GUIDE = `אתה עוזר למרפאה בעיסוק התפתחותית בכירה במכון להתפתחות הילד בישראל לנסח שדות של דוח סיכום אבחון שמוזן למערכת Cliks.
-קיבלת שדות שכבר מכילים את הממצאים. התפקיד שלך הוא לנסח אותם כדוח אינטגרטיבי לפי מודל ה-ICF, בגישה מבוססת חוזקות, ולכתוב סיכום.
-
-כללי ברזל:
-1. אסור להוסיף ממצא, אבחנה, ציון או פרט שלא מופיע בשדות. אם שדה ריק, החזר אותו ריק.
-2. אסור לשנות, לעגל או להשמיט ציונים, אחוזונים, ציוני תקן, זמנים או מספרים.
-3. תגיות כמו [שם], [שם2], [שם משפחה], [תאריך] הן פרטים שהוסרו. העתק אותן בדיוק כמו שהן, במקומות המתאימים.
-4. שמור על המגדר שצוין לאורך כל הטקסט.
-5. אל תקבע אבחנה רפואית. תאר תפקוד.
-
-סגנון אינטגרטיבי (ICF):
-- אל תכתוב רשימה של ממצאים מבודדים. קשר בין מרכיבי התפקוד (מוטוריקה גסה ועדינה, ויסות חושי, תפיסה, קשב וארגון) לבין ההשתתפות של הילד ביומיום: עצמאות בתפקודי יומיום, משחק, ולמידה בגן או בבית הספר.
-- קשר שכתוב בשדות (למשל בהשפעה על התפקוד, או בדיווח ההורים והמסגרת): כתוב אותו כרגיל.
-- קשר שאתה מסיק בעצמך ואינו כתוב בשדות: מותר להציע אותו רק אם הוא נשען על ממצא שמופיע בשדות, וחובה לעטוף את כל המשפט בסימון [לבדיקה: ...], כדי שהמאבחנת תאשר או תמחק. בתוך הסימון אל תשתמש בסוגריים מרובעים.
-  דוגמה: "[לבדיקה: הקושי בשמירה על יציבה בישיבה עשוי להשפיע על ההתמדה במטלות גרפומוטוריות ליד שולחן.]"
-- שפה מקצועית, מכבדת ולא שיפוטית. למשל, במקום "לא משתף פעולה": "נזקק לתיווך ולחיזוקים לשם גיוס והתמדה במטלה".
-- גוף שלישי, זמן הווה בתיאור תפקוד, עבר בתיאור מהלך האבחון ("הגיע", "שיתף פעולה").
-- ממצאים: פסקה רציפה לכל תחום, שפותחת במה שתקין ושמור בתחום, ואחריו מוקדי הקושי.
-- Beery: "באבחון BEERY, בחלק הבודק אינטגרציה ויזו-מוטורית קיבל ציון באחוזון 30, בטווח הנורמה לגילו, מתחת לממוצע."
-- סיכום: קיבלת טיוטת סיכום. פתח במשפט הפתיחה, ואחריו בחוזקות, בתחומי העניין ובתפקודים השמורים של הילד. אחריהם תאר את מוקדי הקושי תחום אחר תחום, וקשר אותם להשתתפות היומיומית לפי הכללים שלמעלה.
-- בסיכום אסור להשמיט קושי, ממצא חריג או ציון מתחת לנורמה שמופיעים בטיוטה. אפשר לקצר ולאחד רק תיאורים של תפקוד תקין. בלי מידע שלא מופיע בממצאים.
-
-החזר אך ורק אובייקט JSON תקין עם אותם מפתחות שקיבלת, בלי טקסט נוסף.`;
-
-// בחירת סגנון הניסוח (נשמרת בדפדפן)
+// בחירת סגנון הניסוח (נשמרת בדפדפן). ההוראות לכל סגנון נמצאות ב-Worker, לא כאן.
 const STYLES = {
-  inst: {label: 'סגנון המכון', guide: STYLE_GUIDE},
-  icf: {label: 'דוח אינטגרטיבי (ICF, מבוסס חוזקות)', guide: ICF_GUIDE},
+  inst: {label: 'סגנון המכון'},
+  icf: {label: 'דוח אינטגרטיבי (ICF, מבוסס חוזקות)'},
 };
 const STYLE_STORE = 'ot_form_style_v1';
 function getStyle(){ const v = load(STYLE_STORE); return STYLES[v] ? v : 'inst'; }
@@ -2263,7 +2150,7 @@ async function polish(){
   if (!(await confirmSend('ניסוח בעזרת Claude', preview))) return;
   const btn = $('polish'); btn.disabled = true; btn.textContent = 'מנסח...';
   try {
-    const obj = parseJsonReply(await callClaude(STYLES[getStyle()].guide, user, n => { btn.textContent = 'מנסח... (' + n + ' תווים)'; }, {kind: 'polish', style: getStyle()}));
+    const obj = parseJsonReply(await callClaude(user, n => { btn.textContent = 'מנסח... (' + n + ' תווים)'; }, {kind: 'polish', style: getStyle()}));
     // שומרים את המצב הקודם של כל שדה, כדי שאפשר יהיה לבטל את הניסוח
     const before = {};
     let n = 0;
@@ -2650,19 +2537,6 @@ function extractSchema(mode){
 const EXTRACT_FORMAT = {type: 'json_schema', schema: {type: 'object', additionalProperties: false, required: ['items'], properties: {
   items: {type: 'array', items: {type: 'object', additionalProperties: false, required: ['field', 'value', 'quote'],
     properties: {field: {type: 'string'}, value: {type: 'string'}, quote: {type: 'string'}}}}}}};
-const EXTRACT_GUIDE = `אתה עוזר למרפאה בעיסוק במכון להתפתחות הילד בישראל. קיבלת טקסט ורשימת שדות של טופס דוח אבחון.
-המשימה: לחלץ מהטקסט את המידע שמתאים לשדות. לכל ערך מצרפים ציטוט מדויק מהטקסט שעליו הוא מבוסס, כדי שהמאבחנת תוכל לאשר אותו.
-
-כללי ברזל:
-1. רק מידע שכתוב במפורש בטקסט. אסור להסיק, לנחש או להשלים. אם אין מידע לשדה, אל תכלול אותו.
-2. כל פריט: field = מזהה השדה, value = הערך, quote = קטע שמועתק מילה במילה מהטקסט (עד 30 מילים) ומבסס את הערך. בלי ציטוט מדויק, אל תכלול את הפריט.
-3. בשדה select: value הוא מפתח אחד מתוך options. בשדה multi: פריט נפרד לכל מפתח מתוך options. בשדה number: ספרות בלבד, בדיוק כמו בטקסט.
-4. בשדה text: משפט או כמה משפטים קצרים בעברית, בגוף שלישי ובסגנון קליני. פרטים שאין להם אפשרות מתאימה ב-options נכנסים לשדות ההערות של אותו כרטיס.
-5. זהה את החלקים בטקסט לפי התוכן, גם כשהכותרות שונות מהטופס או חסרות.
-6. תגיות כמו [שם], [שם2], [שם משפחה], [תאריך], [יישוב], [הוסר] הן פרטים שהוסרו. העתק אותן כמו שהן, ואל תנסה לשחזר אותן.
-7. שדה ref הוא הגורם שהפנה לאבחון הנוכחי. reasons הן סיבות ההפניה. impact: איך הקשיים משפיעים על היומיום בבית ובמסגרת.
-
-החזר אך ורק אובייקט JSON תקין במבנה {"items":[{"field":"...","value":"...","quote":"..."}]}, בלי טקסט נוסף.`;
 const EXTRACT_MODE_GUIDE = {
   prev: 'סוג הטקסט: מסמכים קודמים (שאלונים, דוחות של אבחונים קודמים, סיכומי שיחה). מלא רקע, דיווחים, טיפולים קודמים (prevTx, כולל המלצות שניתנו) ואמצעי הערכה מהסוג שמופיע ב-options. אין לך שדות ממצאים: ממצאים מאבחון קודם נכנסים בתמצית ל-prevTx.',
   notes: 'סוג הטקסט: הרשמים של המאבחנת מהאבחון הנוכחי (תצפיות, ציונים, דיווחים). מלא גם את הממצאים, הציונים והתצפיות של האבחון הנוכחי, ואת אמצעי ההערכה שבוצעו בו.',
@@ -2703,8 +2577,8 @@ async function extractWithClaude(){
   const model = load(MODEL_STORE) || EXTRACT_MODEL;
   try {
     let reply;
-    try { reply = await callClaude(EXTRACT_GUIDE, user, prog, {model, format: EXTRACT_FORMAT, kind: 'extract'}); }
-    catch(e){ if (e.status !== 400) throw e; reply = await callClaude(EXTRACT_GUIDE, user, prog, {model, kind: 'extract'}); }   // בלי structured outputs, אם המודל לא תומך
+    try { reply = await callClaude(user, prog, {model, format: EXTRACT_FORMAT, kind: 'extract'}); }
+    catch(e){ if (e.status !== 400) throw e; reply = await callClaude(user, prog, {model, kind: 'extract'}); }   // בלי structured outputs, אם המודל לא תומך
     const obj = parseJsonReply(reply);
     extractItems = checkItems(obj.items, sc, body);
     renderExtractReview(text.length > EXTRACT_MAX);
@@ -3158,6 +3032,7 @@ $('modal').addEventListener('click', e => {
 $('more').addEventListener('click', e => { if (e.target.closest('.more-menu button')) $('more').open = false; });
 document.addEventListener('click', e => { if ($('more').open && !$('more').contains(e.target)) $('more').open = false; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('more').open){ $('more').open = false; $('more').querySelector('summary').focus(); } });
+store('ot_form_api_key_v1', null);   // מחיקת מפתח API ישן שנשמר בגרסאות קודמות של הטופס
 keyStatus();
 $('exportWord').addEventListener('click', exportWord);
 $('printReport').addEventListener('click', printReport);
