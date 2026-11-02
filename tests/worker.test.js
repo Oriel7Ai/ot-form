@@ -127,6 +127,51 @@ test('בנק ניסוחים: בלי בנק, בנק פגום, ctx לא תקין �
   assert.deepStrictEqual(m.cleanCtx({age: 5.5, fields: ['f_fm', 'x'], tools: ['beery', 'BAD TOOL']}), {age: 5.5, fields: ['f_fm'], tools: ['beery']});
 });
 
+const CKEY = Buffer.from(Array.from({length: 32}, (_, i) => i)).toString('base64');
+const PARA = 'בתחום המוטוריקה העדינה- אוחז בעיפרון באחיזה תלת-אצבעית, וגוזר על קו ישר בדיוק טוב.';
+
+test('תרומה לבנק: נשמרת מוצפנת בתור המתנה, עם קוד התורם, בלי לפנות ל-Claude', async w => {
+  const env = makeEnv({CONTRIB_KEY: CKEY}); upstream = null;
+  const r = await w.fetch(req({kind: 'contribute', attest: true, age: 5.5, tools: ['beery', 'BAD'], items: [{field: 'f_fm', text: PARA}, {field: 'summary', text: 'לסיכום, ' + PARA}]}), env);
+  assert.strictEqual(r.status, 200);
+  assert.deepStrictEqual(await r.json(), {ok: true, count: 2});
+  assert.strictEqual(upstream, null);
+  const keys = [...env.OT_FORM.kv.keys()].filter(k => k.startsWith('contrib:pending:'));
+  assert.strictEqual(keys.length, 2);
+  const sealed = env.OT_FORM.kv.get(keys[0]);
+  assert.ok(!sealed.includes('אוחז') && !sealed.includes('רות'), 'נשמר מוצפן');
+  const m = await import(path.resolve(__dirname, '..', 'worker', 'index.js'));
+  const rec = await m.openRecord(CKEY, sealed);
+  assert.strictEqual(rec.by, 'רות'); assert.strictEqual(rec.age, 5.5); assert.deepStrictEqual(rec.tools, ['beery']);
+  assert.ok(['f_fm', 'summary'].includes(rec.field) && rec.text.includes('אוחז'));
+  assert.strictEqual(env.OT_FORM.kv.get('bank:v1'), undefined, 'לא נכנס לבנק לפני אישור');
+});
+
+test('תרומה לבנק: בלי אישור, שדה לא מותר, טקסט קצר או פרט מזהה, נדחית', async w => {
+  const env = makeEnv({CONTRIB_KEY: CKEY});
+  const bad = async (body, re) => { const r = await w.fetch(req(Object.assign({kind: 'contribute', attest: true}, body)), env);
+    assert.strictEqual(r.status, 422); assert.match((await r.json()).error.message, re); };
+  await bad({attest: false, items: [{field: 'f_fm', text: PARA}]}, /אישור/);
+  await bad({items: []}, /בין 1 ל-12/);
+  await bad({items: [{field: 'family', text: PARA}]}, /ממצאים וסיכום/);
+  await bad({items: [{field: 'f_fm', text: 'קצר'}]}, /באורך/);
+  await bad({items: [{field: 'f_fm', text: PARA + ' טלפון 052-1234567'}]}, /מזהה/);
+  await bad({items: [{field: 'f_fm', text: PARA + ' ת"ז 123456789'}]}, /מזהה/);
+  await bad({items: [{field: 'f_fm', text: PARA + ' נבדק ב-12.3.2025'}]}, /מזהה/);
+  assert.strictEqual([...env.OT_FORM.kv.keys()].filter(k => k.startsWith('contrib:')).length, 0);
+  const off = await w.fetch(req({kind: 'contribute', attest: true, items: [{field: 'f_fm', text: PARA}]}), makeEnv());
+  assert.strictEqual(off.status, 500);
+});
+
+test('תרומה לבנק: מגבלה יומית של 40 פסקאות לכל קוד', async w => {
+  const env = makeEnv({CONTRIB_KEY: CKEY});
+  const items = Array.from({length: 12}, () => ({field: 'f_gm', text: PARA}));
+  for (let i = 0; i < 3; i++) assert.strictEqual((await w.fetch(req({kind: 'contribute', attest: true, items}), env)).status, 200);
+  const r = await w.fetch(req({kind: 'contribute', attest: true, items: items.slice(0, 5)}), env);
+  assert.strictEqual(r.status, 429);
+  assert.strictEqual((await w.fetch(req({kind: 'contribute', attest: true, items: items.slice(0, 4)}), env)).status, 200);
+});
+
 (async () => {
   const w = (await import(path.resolve(__dirname, '..', 'worker', 'index.js'))).default;
   let fail = 0;

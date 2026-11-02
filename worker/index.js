@@ -78,6 +78,63 @@ function cors(origin, env){
 const fail = (status, message, headers) => new Response(JSON.stringify({error: {message}}),
   {status, headers: Object.assign({'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store'}, headers)});
 
+// ---- תרומות לבנק: פסקאות שמטפלים שולחים מהטופס, אחרי הסרת פרטים מזהים ובדיקה ידנית אצלם.
+// הן נשמרות מוצפנות בתור המתנה (contrib:pending:<id>), ונכנסות לבנק רק אחרי אישור בדף הניהול.
+const CONTRIB_FIELDS = ['f_beh', 'f_gm', 'f_fm', 'f_wr', 'f_cog', 'f_play', 'f_sens', 'summary'];
+const CONTRIB_MAX_ITEMS = 12, CONTRIB_MIN = 30, CONTRIB_MAX = 4000, CONTRIB_DAILY = 40;
+// רשת ביטחון בשרת: פרטים שהטופס היה אמור להסיר
+const PII_RES = [/[\w.+\-]+@[\w\-]+(\.[\w\-]+)+/, /(?<!\d)(?:\+972[\-\s]?|0)(?:5\d|7\d|[23489])[\-\s]?\d{3}[\-\s]?\d{4}(?!\d)/,
+  /(?<!\d)\d{8,9}(?!\d)/, /(?<!\d)\d{1,2}[.\/\-]\d{1,2}[.\/\-](?:\d{4}|\d{2})(?!\d)/];
+
+export function cleanContribution(req){
+  if (req.attest !== true) return {error: 'חסר אישור על הסרת הפרטים המזהים.'};
+  const items = Array.isArray(req.items) ? req.items : [];
+  if (!items.length || items.length > CONTRIB_MAX_ITEMS) return {error: 'אפשר לתרום בין 1 ל-' + CONTRIB_MAX_ITEMS + ' פסקאות בכל פעם.'};
+  const ctx = cleanCtx({age: req.age, fields: [], tools: req.tools});
+  const out = [];
+  for (const it of items){
+    const field = it && it.field, text = it && typeof it.text === 'string' ? it.text.trim() : '';
+    if (!CONTRIB_FIELDS.includes(field)) return {error: 'אפשר לתרום רק פסקאות של ממצאים וסיכום.'};
+    if (text.length < CONTRIB_MIN || text.length > CONTRIB_MAX) return {error: 'כל פסקה צריכה להיות באורך ' + CONTRIB_MIN + ' עד ' + CONTRIB_MAX + ' תווים.'};
+    if (PII_RES.some(re => re.test(text))) return {error: 'נמצא בטקסט פרט שנראה מזהה (מייל, טלפון, מספר מזהה או תאריך). הסירי אותו ונסי שוב.'};
+    out.push({field, text});
+  }
+  return {items: out, age: ctx.age, tools: ctx.tools};
+}
+
+async function contribKey(secret){
+  const raw = Uint8Array.from(atob(secret), c => c.charCodeAt(0));
+  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+const b64 = u8 => btoa(String.fromCharCode(...u8));
+export async function sealRecord(secret, rec){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({name: 'AES-GCM', iv}, await contribKey(secret), new TextEncoder().encode(JSON.stringify(rec))));
+  return JSON.stringify({v: 1, iv: b64(iv), ct: b64(ct)});
+}
+export async function openRecord(secret, sealed){
+  const s = JSON.parse(sealed), un = x => Uint8Array.from(atob(x), c => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt({name: 'AES-GCM', iv: un(s.iv)}, await contribKey(secret), un(s.ct))));
+}
+
+async function contribute(req, owner, env, ch){
+  if (!env.CONTRIB_KEY) return fail(500, 'התרומות לבנק עוד לא הוגדרו ב-Worker.', ch);
+  const c = cleanContribution(req);
+  if (c.error) return fail(422, c.error, ch);
+  const day = new Date().toISOString().slice(0, 10), key = 'contrib-usage:' + owner + ':' + day;
+  const used = Number(await env.OT_FORM.get(key)) || 0;
+  if (used + c.items.length > CONTRIB_DAILY) return fail(429, 'הגעת למספר התרומות היומי (' + CONTRIB_DAILY + ' פסקאות). אפשר להמשיך מחר.', ch);
+  const at = new Date().toISOString();
+  for (const it of c.items){
+    const id = crypto.randomUUID();
+    const rec = {id, src: 'contrib', by: owner, at, field: it.field, age: c.age, tools: c.tools, text: it.text};
+    await env.OT_FORM.put('contrib:pending:' + id, await sealRecord(env.CONTRIB_KEY, rec));
+  }
+  await env.OT_FORM.put(key, String(used + c.items.length), {expirationTtl: 3 * 86400});
+  return new Response(JSON.stringify({ok: true, count: c.items.length}),
+    {status: 200, headers: Object.assign({'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store'}, ch)});
+}
+
 export default {
   async fetch(request, env){
     const origin = request.headers.get('origin') || '';
@@ -92,6 +149,7 @@ export default {
     const raw = await request.text();
     if (raw.length > MAX_BODY) return fail(413, 'הטקסט ארוך מדי לבקשה אחת.', ch);
     let req; try { req = JSON.parse(raw); } catch(e){ return fail(400, 'בקשה לא תקינה.', ch); }
+    if (req && req.kind === 'contribute') return contribute(req, owner, env, ch);
     const kind = req.kind === 'extract' ? 'extract' : req.kind === 'polish' ? 'polish' : null;
     if (!kind || typeof req.user !== 'string' || !req.user.trim()) return fail(400, 'בקשה לא תקינה.', ch);
     const promptKey = kind === 'extract' ? 'extract' : (req.style === 'icf' ? 'icf' : 'inst');

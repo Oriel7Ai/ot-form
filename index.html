@@ -274,6 +274,10 @@ input[data-auto="1"]{background:var(--green-soft);color:var(--green-ink);font-we
   #printArea .psign{margin-top:28pt;break-inside:avoid}
   @page{size:A4;margin:18mm}
 }
+.cbrow{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:8px 0}
+.cbrow .cbhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cbrow textarea{width:100%;min-height:90px;margin-top:6px}
+.cbrow select{max-width:100%}
 </style>
 </head>
 <body>
@@ -293,6 +297,7 @@ input[data-auto="1"]{background:var(--green-soft);color:var(--green-ink);font-we
           <button class="btn" id="openDraft" role="menuitem">פתיחת טיוטה מקובץ</button>
           <button class="btn" id="keyBtn" role="menuitem">הגדרת מפתח API</button>
           <button class="btn" id="myPhrases" role="menuitem">הניסוחים שלי</button>
+          <button class="btn" id="contribBtn" role="menuitem">תרומה לבנק הניסוחים</button>
           <button class="btn" id="meBtn" role="menuitem">פרטי המאבחנת ל-Word</button>
           <button class="btn" id="insightsBtn" role="menuitem">תובנות שימוש ומשוב</button>
           <button class="btn" id="resetAll" role="menuitem">ניקוי הטופס</button>
@@ -1610,6 +1615,84 @@ async function keyAction(act){
   } catch (e){ openAccessPanel(keyAfter, e.message); }
 }
 
+// ---- תרומה לבנק הניסוחים המשותף: פסקאות של ממצאים וסיכום, אחרי הסרת פרטים מזהים ובדיקה ידנית.
+// הפסקאות נשלחות ל-Worker לתור המתנה, ונכנסות לבנק רק אחרי אישור בדף הניהול.
+const CONTRIB_FIELDS = ['f_beh', 'f_gm', 'f_fm', 'f_wr', 'f_cog', 'f_play', 'f_sens', 'summary'];
+const CONTRIB_GUESS = [['summary', /^\s*לסיכום|^\s*סיכום/], ['f_wr', /כתיבה|אותיות|העתקה מהלוח/], ['f_fm', /מוטוריקה עדינה|גרפומוטורי|אחיזה|גזיר/],
+  ['f_gm', /מוטוריקה גסה|שיווי משקל|קפיצ|טונוס/], ['f_sens', /ויסות|חושי|SP2/], ['f_play', /משחק/], ['f_cog', /תפיסה|חשיבה|קשב|פאזל/],
+  ['f_beh', /שיתוף פעולה|התנהגות|הגיע לאבחון|נפרד/]];
+let contribExtra = [];
+function contribClean(t, extra){
+  return DEID.toPlain(DEID.deidentify(hideNames(DEID.normalize(t).trim()), {extra: extra || [], labels: true, dates: true, phones: true, ids: true, emails: true, address: true, cities: true, doctors: true, kupa: true}));
+}
+function contribRow(field, text, on){
+  const opts = '<option value="">בחרי תחום</option>' + CONTRIB_FIELDS.map(k => '<option value="' + k + '"' + (k === field ? ' selected' : '') + '>' + esc(fieldTitle(k).replace('ממצאי האבחון - ', '')) + '</option>').join('');
+  return '<div class="cbrow"><div class="cbhead"><label><input type="checkbox" data-cb-on' + (on ? ' checked' : '') + '> לתרומה</label>' +
+    '<select data-cb-field aria-label="תחום">' + opts + '</select></div><textarea data-cb-text aria-label="טקסט הפסקה">' + esc(text) + '</textarea></div>';
+}
+function openContribPanel(msg){
+  contribExtra = [];
+  const a = ageYears();
+  const cur = CONTRIB_FIELDS.map(k => [k, ($('o_' + k) && $('o_' + k).value.trim()) || '']).filter(([, v]) => v.length >= 30);
+  openModal('<h3>תרומה לבנק הניסוחים</h3>' +
+    '<p>הבנק המשותף עוזר לכל המאבחנות לקבל ניסוחים מדויקים יותר. אפשר לתרום רק פסקאות של <b>ממצאים וסיכום</b>, בלי רקע משפחתי ורפואי. ' +
+    'פרטים מזהים מוסרים כאן, במחשב שלך, ויש לעבור על כל פסקה לפני השליחה. כל תרומה נבדקת ומאושרת לפני שהיא נכנסת לבנק.</p>' +
+    '<h4>מהדוח הנוכחי</h4><div id="cbCur">' + (cur.length ? cur.map(([k, v]) => contribRow(k, contribClean(v), false)).join('') : '<p class="hint">אין עדיין פסקאות ממצאים או סיכום בדוח הנוכחי.</p>') + '</div>' +
+    '<h4>מדוח אחר</h4>' +
+    '<label class="lbl" for="cbFile">קובץ Word (docx) או טקסט (txt)</label><input type="file" id="cbFile" accept=".docx,.txt">' +
+    '<label class="lbl" for="cbPaste">או הדביקי טקסט</label><textarea id="cbPaste" style="min-height:70px"></textarea>' +
+    '<label class="lbl" for="cbNames">השמות שמופיעים בטקסט: הילד/ה, ההורים, האחים, הגן או בית הספר (מופרדים בפסיק)</label><input type="text" id="cbNames" autocomplete="off">' +
+    '<div class="mrow"><button class="btn" data-cb="add">הוספה לרשימה</button></div><div id="cbOther"></div>' +
+    '<label class="lbl" for="cbAge">גיל הילד/ה בשנים (משוער, לבחירת דוגמאות)</label><input type="number" id="cbAge" min="0" max="21" step="0.5" value="' + (a === null ? '' : Math.round(a * 2) / 2) + '">' +
+    '<label style="display:block;margin-top:10px"><input type="checkbox" id="cbAttest"> עברתי על כל פסקה שסימנתי: אין בה שמות, מוסדות, תאריכים או פרטים אחרים שמזהים את הילד/ה או את המשפחה, ויש לי הרשאה לשתף אותה לשיפור הכלי.</label>' +
+    '<div class="mrow"><button class="btn primary" data-cb="send">שליחה לבדיקה</button><button class="btn" data-cb="close">ביטול</button></div>' +
+    (msg ? '<div class="warnbox" style="margin-top:10px">' + esc(msg) + '</div>' : ''));
+  $('modal').onclick = e => { const act = e.target.getAttribute && e.target.getAttribute('data-cb'); if (act) contribAction(act); };
+}
+async function contribAction(act){
+  if (act === 'close'){ $('modal').onclick = null; closeModal(); return; }
+  if (act === 'add'){
+    let text = val('cbPaste');
+    const f = $('cbFile').files[0];
+    if (f){ try { text = (await readAnyFile(f)) + '\n\n' + text; } catch(e){ return contribWarn(f.name + ': ' + e.message); } }
+    contribExtra = contribExtra.concat(list(val('cbNames')));
+    const paras = DEID.normalize(text).split(/\n\s*\n|\n(?=\s*(?:בתחום|לסיכום|סיכום))/).map(x => x.replace(/\s+/g, ' ').trim()).filter(x => x.length >= 30);
+    if (!paras.length) return contribWarn('לא נמצאו פסקאות באורך 30 תווים לפחות.');
+    $('cbOther').insertAdjacentHTML('beforeend', paras.map(p => contribRow((CONTRIB_GUESS.find(([, re]) => re.test(p)) || [''])[0], contribClean(p, contribExtra), false)).join(''));
+    $('cbPaste').value = ''; $('cbFile').value = '';
+    return;
+  }
+  if (act !== 'send') return;
+  const rows = [...$('modal').querySelectorAll('.cbrow')].filter(r => r.querySelector('[data-cb-on]').checked);
+  if (!rows.length) return contribWarn('לא סומנה אף פסקה לתרומה.');
+  if (!$('cbAttest').checked) return contribWarn('כדי לשלוח, יש לאשר שעברת על הפסקאות ושאין בהן פרטים מזהים.');
+  const names = nameList().map(x => x.name).concat(contribExtra).filter(n => n.length >= 2);
+  const items = [];
+  for (const r of rows){
+    const field = r.querySelector('[data-cb-field]').value, text = contribClean(r.querySelector('[data-cb-text]').value, contribExtra);
+    if (!field) return contribWarn('יש לבחור תחום לכל פסקה שסומנה.');
+    if (text.length < 30) return contribWarn('כל פסקה צריכה להיות באורך 30 תווים לפחות.');
+    const leak = names.find(n => new RegExp('(?<![\\u05D0-\\u05EA])' + escRe(n) + '(?![\\u05D0-\\u05EA])').test(text));
+    if (leak) return contribWarn('נמצא שם בטקסט שעמד להישלח. מחקי אותו או החליפי ב-[שם].');
+    items.push({field, text});
+  }
+  const ageV = parseFloat(val('cbAge'));
+  const body = {kind: 'contribute', attest: true, items, age: isNaN(ageV) ? null : ageV, tools: chips('tools')};
+  $('modal').onclick = null;
+  if (!(await confirmSend('תרומה לבנק הניסוחים', items.map(it => '— ' + fieldTitle(it.field) + ' —\n' + it.text).join('\n\n')))) return;
+  try {
+    const res = await fetch(PROXY.url, {method: 'POST', headers: {'content-type': 'application/json', 'x-ot-code': accessCode()}, body: JSON.stringify(body)});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data.error && data.error.message) || ('שגיאה ' + res.status));
+    flash('תודה! ' + data.count + ' פסקאות נשלחו לבדיקה לפני כניסה לבנק');
+  } catch(e){ openContribPanel('התרומה לא נשלחה: ' + (e.message === 'Failed to fetch' ? 'אין חיבור לאינטרנט.' : e.message)); }
+}
+function contribWarn(m){
+  let w = $('modal').querySelector('.cbwarn');
+  if (!w){ $('modal').insertAdjacentHTML('beforeend', '<div class="warnbox cbwarn" role="alert" style="margin-top:10px"></div>'); w = $('modal').querySelector('.cbwarn'); }
+  w.textContent = m;
+}
+
 // תצוגה מקדימה: מה בדיוק יוצא מהמחשב. השליחה רק אחרי אישור.
 function confirmSend(title, text){
   return new Promise(resolve => {
@@ -1691,7 +1774,7 @@ function parseSSE(raw){
 // =====================================================================
 //  טיוטה מוצפנת: שמירה לקובץ ופתיחה ממנו (למעבר בין טלפון למחשב)
 // =====================================================================
-const DRAFT_SKIP = ['polishStyle', 'imFiles', 'imPaste', 'imExtra', 'kKey', 'kCode', 'kCode2', 'kModel', 'dPass', 'dPass2'];
+const DRAFT_SKIP = ['cbFile', 'cbPaste', 'cbNames', 'cbAge', 'cbAttest', 'polishStyle', 'imFiles', 'imPaste', 'imExtra', 'kKey', 'kCode', 'kCode2', 'kModel', 'dPass', 'dPass2'];
 // withImport: גם הטקסט שיובא (המקורי, לפני הסרת הפרטים). רק לטיוטות המוצפנות, לא לשמירה האוטומטית.
 function collectState(withImport){
   const st = {v:1, ctl:{}, chips:{}, goals:goalOrder.slice(), out:{}};
@@ -3020,6 +3103,7 @@ document.addEventListener('keydown', trapFocus);
 $('modal').addEventListener('click', e => { const el = e.target.closest && e.target.closest('[data-p]'); if (el) phraseAction(el.getAttribute('data-p'), el); });
 $('pages').addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-addph]'); if (b) openAddPhrase(b.getAttribute('data-addph')); });
 $('myPhrases').addEventListener('click', openMyPhrases);
+$('contribBtn').addEventListener('click', () => { $('more').open = false; claudeReady() ? openContribPanel() : openKeyPanel(openContribPanel); });
 $('meBtn').addEventListener('click', openMe);
 $('insightsBtn').addEventListener('click', openInsights);
 $('pages').addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-fb]'); if (b) openFeedback(+b.dataset.fb); });
