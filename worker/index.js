@@ -18,7 +18,8 @@ const PROMPT_KEYS = {inst: 'prompt:inst', icf: 'prompt:icf', extract: 'prompt:ex
 const BANK_KEY = 'bank:v1';
 const BANK_FIELDS = {background: 'רקע התפתחותי ורפואי', prev: 'טיפולים בעבר ובהווה', family: 'רקע משפחתי',
   parents: 'דיווח ההורים והילד', school: 'דיווח מסגרת חינוכית', f_beh: 'התנהגות ושיתוף פעולה', f_gm: 'מוטוריקה גסה',
-  f_fm: 'מוטוריקה עדינה וגרפומוטוריקה', f_wr: 'כתיבה', f_cog: 'תפיסה וחשיבה', f_play: 'משחק', f_sens: 'ויסות חושי', summary: 'סיכום'};
+  f_fm: 'מוטוריקה עדינה וגרפומוטוריקה', f_wr: 'כתיבה', f_cog: 'תפיסה וחשיבה', f_play: 'משחק', f_sens: 'ויסות חושי', summary: 'סיכום',
+  rec: 'מומלץ לטיפול בריפוי בעיסוק', goals: 'מטרות', recs: 'המלצות נוספות'};
 const BANK_PER_FIELD = 1, BANK_MAX = 6;
 
 // מה שהטופס שולח על הבקשה, בלי פרטים מזהים: גיל מעוגל, השדות שיש בהם טקסט וכלי ההערכה שסומנו
@@ -78,28 +79,35 @@ function cors(origin, env){
 const fail = (status, message, headers) => new Response(JSON.stringify({error: {message}}),
   {status, headers: Object.assign({'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store'}, headers)});
 
-// ---- תרומות לבנק: פסקאות שמטפלים שולחים מהטופס, אחרי הסרת פרטים מזהים ובדיקה ידנית אצלם.
-// הן נשמרות מוצפנות בתור המתנה (contrib:pending:<id>), ונכנסות לבנק רק אחרי אישור בדף הניהול.
-const CONTRIB_FIELDS = ['f_beh', 'f_gm', 'f_fm', 'f_wr', 'f_cog', 'f_play', 'f_sens', 'summary'];
-const CONTRIB_MAX_ITEMS = 12, CONTRIB_MIN = 30, CONTRIB_MAX = 4000, CONTRIB_DAILY = 40;
+// ---- ייבוא דוחות למאגר: דוחות שמאבחנים מייבאים מהטופס, אחרי הסרת פרטים מזהים ובדיקה אצלם.
+// כל דוח נשמר מוצפן בתור המתנה (contrib:pending:<id>), ונכנס למאגר רק אחרי אישור בדף הניהול.
+// רק פרקי ממצאים, סיכום, המלצות ומטרות. רקע ודיווחים לא מתקבלים.
+const CONTRIB_FIELDS = ['f_beh', 'f_gm', 'f_fm', 'f_wr', 'f_cog', 'f_play', 'f_sens', 'summary', 'rec', 'goals', 'recs'];
+const CONTRIB_MAX_REPORTS = 10, CONTRIB_MIN = 30, CONTRIB_MAX = 8000, CONTRIB_DAILY = 30;
 // רשת ביטחון בשרת: פרטים שהטופס היה אמור להסיר
 const PII_RES = [/[\w.+\-]+@[\w\-]+(\.[\w\-]+)+/, /(?<!\d)(?:\+972[\-\s]?|0)(?:5\d|7\d|[23489])[\-\s]?\d{3}[\-\s]?\d{4}(?!\d)/,
   /(?<!\d)\d{8,9}(?!\d)/, /(?<!\d)\d{1,2}[.\/\-]\d{1,2}[.\/\-](?:\d{4}|\d{2})(?!\d)/];
 
 export function cleanContribution(req){
   if (req.attest !== true) return {error: 'חסר אישור על הסרת הפרטים המזהים.'};
-  const items = Array.isArray(req.items) ? req.items : [];
-  if (!items.length || items.length > CONTRIB_MAX_ITEMS) return {error: 'אפשר לתרום בין 1 ל-' + CONTRIB_MAX_ITEMS + ' פסקאות בכל פעם.'};
-  const ctx = cleanCtx({age: req.age, fields: [], tools: req.tools});
+  const reports = Array.isArray(req.reports) ? req.reports : [];
+  if (!reports.length || reports.length > CONTRIB_MAX_REPORTS) return {error: 'אפשר לשלוח בין 1 ל-' + CONTRIB_MAX_REPORTS + ' דוחות בכל פעם.'};
   const out = [];
-  for (const it of items){
-    const field = it && it.field, text = it && typeof it.text === 'string' ? it.text.trim() : '';
-    if (!CONTRIB_FIELDS.includes(field)) return {error: 'אפשר לתרום רק פסקאות של ממצאים וסיכום.'};
-    if (text.length < CONTRIB_MIN || text.length > CONTRIB_MAX) return {error: 'כל פסקה צריכה להיות באורך ' + CONTRIB_MIN + ' עד ' + CONTRIB_MAX + ' תווים.'};
-    if (PII_RES.some(re => re.test(text))) return {error: 'נמצא בטקסט פרט שנראה מזהה (מייל, טלפון, מספר מזהה או תאריך). הסירי אותו ונסי שוב.'};
-    out.push({field, text});
+  for (const r of reports){
+    const secs = r && Array.isArray(r.sections) ? r.sections : [];
+    if (!secs.length || secs.length > CONTRIB_FIELDS.length) return {error: 'בכל דוח צריך להיות לפחות פרק אחד.'};
+    const seen = new Set(), sections = [];
+    for (const sec of secs){
+      const field = sec && sec.field, text = sec && typeof sec.text === 'string' ? sec.text.trim() : '';
+      if (!CONTRIB_FIELDS.includes(field) || seen.has(field)) return {error: 'אפשר לשלוח רק פרקי ממצאים, סיכום, המלצות ומטרות, כל פרק פעם אחת.'};
+      if (text.length < CONTRIB_MIN || text.length > CONTRIB_MAX) return {error: 'כל פרק צריך להיות באורך ' + CONTRIB_MIN + ' עד ' + CONTRIB_MAX + ' תווים.'};
+      if (PII_RES.some(re => re.test(text))) return {error: 'נמצא בדוח פרט שנראה מזהה (מייל, טלפון, מספר מזהה או תאריך). הסירי אותו ונסי שוב.'};
+      seen.add(field); sections.push({field, text});
+    }
+    const ctx = cleanCtx({age: r.age, fields: [], tools: r.tools});
+    out.push({sections, age: ctx.age, tools: ctx.tools});
   }
-  return {items: out, age: ctx.age, tools: ctx.tools};
+  return {reports: out};
 }
 
 async function contribKey(secret){
@@ -118,20 +126,19 @@ export async function openRecord(secret, sealed){
 }
 
 async function contribute(req, owner, env, ch){
-  if (!env.CONTRIB_KEY) return fail(500, 'התרומות לבנק עוד לא הוגדרו ב-Worker.', ch);
+  if (!env.CONTRIB_KEY) return fail(500, 'ייבוא הדוחות למאגר עוד לא הוגדר ב-Worker.', ch);
   const c = cleanContribution(req);
   if (c.error) return fail(422, c.error, ch);
   const day = new Date().toISOString().slice(0, 10), key = 'contrib-usage:' + owner + ':' + day;
   const used = Number(await env.OT_FORM.get(key)) || 0;
-  if (used + c.items.length > CONTRIB_DAILY) return fail(429, 'הגעת למספר התרומות היומי (' + CONTRIB_DAILY + ' פסקאות). אפשר להמשיך מחר.', ch);
+  if (used + c.reports.length > CONTRIB_DAILY) return fail(429, 'הגעת למספר הדוחות היומי (' + CONTRIB_DAILY + '). אפשר להמשיך מחר.', ch);
   const at = new Date().toISOString();
-  for (const it of c.items){
+  for (const r of c.reports){
     const id = crypto.randomUUID();
-    const rec = {id, src: 'contrib', by: owner, at, field: it.field, age: c.age, tools: c.tools, text: it.text};
-    await env.OT_FORM.put('contrib:pending:' + id, await sealRecord(env.CONTRIB_KEY, rec));
+    await env.OT_FORM.put('contrib:pending:' + id, await sealRecord(env.CONTRIB_KEY, {id, src: 'contrib', by: owner, at, age: r.age, tools: r.tools, sections: r.sections}));
   }
-  await env.OT_FORM.put(key, String(used + c.items.length), {expirationTtl: 3 * 86400});
-  return new Response(JSON.stringify({ok: true, count: c.items.length}),
+  await env.OT_FORM.put(key, String(used + c.reports.length), {expirationTtl: 3 * 86400});
+  return new Response(JSON.stringify({ok: true, count: c.reports.length}),
     {status: 200, headers: Object.assign({'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store'}, ch)});
 }
 

@@ -275,7 +275,8 @@ input[data-auto="1"]{background:var(--green-soft);color:var(--green-ink);font-we
   @page{size:A4;margin:18mm}
 }
 .cbrow{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:8px 0}
-.cbrow .cbhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cbhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cbrep{border:2px solid var(--line);border-radius:12px;padding:10px;margin:12px 0}
 .cbrow textarea{width:100%;min-height:90px;margin-top:6px}
 .cbrow select{max-width:100%}
 </style>
@@ -297,7 +298,7 @@ input[data-auto="1"]{background:var(--green-soft);color:var(--green-ink);font-we
           <button class="btn" id="openDraft" role="menuitem">פתיחת טיוטה מקובץ</button>
           <button class="btn" id="keyBtn" role="menuitem">הגדרת מפתח API</button>
           <button class="btn" id="myPhrases" role="menuitem">הניסוחים שלי</button>
-          <button class="btn" id="contribBtn" role="menuitem">תרומה לבנק הניסוחים</button>
+          <button class="btn" id="bankImportBtn" role="menuitem">ייבוא דוחות למאגר</button>
           <button class="btn" id="meBtn" role="menuitem">פרטי המאבחנת ל-Word</button>
           <button class="btn" id="insightsBtn" role="menuitem">תובנות שימוש ומשוב</button>
           <button class="btn" id="resetAll" role="menuitem">ניקוי הטופס</button>
@@ -1615,82 +1616,176 @@ async function keyAction(act){
   } catch (e){ openAccessPanel(keyAfter, e.message); }
 }
 
-// ---- תרומה לבנק הניסוחים המשותף: פסקאות של ממצאים וסיכום, אחרי הסרת פרטים מזהים ובדיקה ידנית.
-// הפסקאות נשלחות ל-Worker לתור המתנה, ונכנסות לבנק רק אחרי אישור בדף הניהול.
-const CONTRIB_FIELDS = ['f_beh', 'f_gm', 'f_fm', 'f_wr', 'f_cog', 'f_play', 'f_sens', 'summary'];
-const CONTRIB_GUESS = [['summary', /^\s*לסיכום|^\s*סיכום/], ['f_wr', /כתיבה|אותיות|העתקה מהלוח/], ['f_fm', /מוטוריקה עדינה|גרפומוטורי|אחיזה|גזיר/],
+// ---- ייבוא דוחות למאגר הדוחות המקצועי: דוחות אבחון שכבר נכתבו (Word או טקסט).
+// הכול קורה כאן, במחשב: זיהוי השמות מכותרות הדוח, הסרת פרטים מזהים, חלוקה לפרקים לפי כותרות Cliks,
+// והשארת פרקי הממצאים, הסיכום, ההמלצות והמטרות בלבד. רקע, דיווחים ופרטים אישיים לא יוצאים מהמחשב.
+// הדוחות נשלחים ל-Worker לתור המתנה מוצפן, ונכנסים למאגר רק אחרי אישור בדף הניהול.
+const BANK_FIELDS_IN = ['f_beh', 'f_gm', 'f_fm', 'f_wr', 'f_cog', 'f_play', 'f_sens', 'summary', 'rec', 'goals', 'recs'];
+// כותרות בדוח ← שדה. null: פרק שלא נכנס למאגר (רקע, דיווחים, פרטי טיפול). 'find': ממצאים בלי תחום, מחולקים לפי התוכן.
+const BANK_HEADINGS = [
+  ['אמצעי הערכה', null], ['כלי הערכה', null], ['רקע התפתחותי ורפואי רלוונטי', null], ['רקע התפתחותי ורפואי', null], ['רקע התפתחותי', null], ['רקע רפואי', null],
+  ['רקע', null], ['טיפולים בעבר ובהווה', null], ['טיפולים קודמים', null], ['רקע משפחתי', null], ['דיווח ההורים והילד', null], ['דיווח ההורים', null], ['דיווח הורים', null],
+  ['דיווח מסגרת חינוכית', null], ['דיווח המסגרת החינוכית', null], ['דיווח הגננת', null], ['דיווח המורה', null], ['סיבת הפניה', null], ['סיבת ההפניה', null],
+  ['התנהגות ושיתוף פעולה', 'f_beh'], ['התנהגות', 'f_beh'], ['מוטוריקה גסה', 'f_gm'], ['מוטוריקה עדינה וגרפומוטוריקה', 'f_fm'], ['מוטוריקה עדינה', 'f_fm'],
+  ['גרפומוטוריקה', 'f_fm'], ['כתיבה', 'f_wr'], ['תפיסה וחשיבה', 'f_cog'], ['משחק', 'f_play'], ['ויסות חושי', 'f_sens'], ['עיבוד חושי', 'f_sens'],
+  ['סיכום והמלצות', 'summary'], ['סיכום', 'summary'], ['מומלץ לטיפול בריפוי בעיסוק', 'rec'], ['מטרות הטיפול', 'goals'], ['מטרות', 'goals'],
+  ['המלצות נוספות', 'recs'], ['המלצות', 'recs'], ['תדירות', null], ['משך הטיפול', null], ['מתכונת', null], ['תגובת המשפחה לתוכנית המוצעת', null], ['תגובת המשפחה', null],
+  ['ממצאי האבחון', 'find'], ['ממצאים', 'find'],
+].sort((a, b) => b[0].length - a[0].length);
+const BANK_GUESS = [['summary', /^\s*לסיכום|^\s*סיכום/], ['f_wr', /כתיבה|אותיות|העתקה מהלוח/], ['f_fm', /מוטוריקה עדינה|גרפומוטורי|אחיזה|גזיר/],
   ['f_gm', /מוטוריקה גסה|שיווי משקל|קפיצ|טונוס/], ['f_sens', /ויסות|חושי|SP2/], ['f_play', /משחק/], ['f_cog', /תפיסה|חשיבה|קשב|פאזל/],
   ['f_beh', /שיתוף פעולה|התנהגות|הגיע לאבחון|נפרד/]];
-let contribExtra = [];
-function contribClean(t, extra){
+const BANK_TOOLS = [['beery', /beery|בירי/i], ['map', /\bMAP\b|מילר/], ['sp2', /SP2|פרופיל חושי|sensory profile/i], ['ayres', /איירס|ayres/i],
+  ['aa', /א"א/], ['grade1', /מבדק כתיבה/], ['doeat', /do-?eat/i], ['brief', /BRIEF/], ['partq', /שאלון השתתפות|CPQ|PICO/i]];
+const NAME_LABEL_RE = /(?:^|\t|\||\s{2,})\s*(שם(?:\s+[א-ת"']+){0,2}|שמות ההורים|הורים|האם|האב|אם|אב|אחים|אחיות|גן|שם הגן|גננת|מורה|מחנכת|מסגרת(?:\s+חינוכית)?|בית ספר|בית הספר|רופא(?:\/ה|ה)?(?:\s+מפנה)?)\s*[:：]\s*([^\t|\n]+?)(?=\t|\||\s{2,}|\n|$)/gm;
+const NAME_STOP = ['בן', 'בת', 'של', 'ילד', 'ילדה', 'גן', 'חובה', 'טרום', 'כיתה', 'בית', 'ספר', 'ד"ר', 'דר', 'פרופ', 'ואם', 'ואב', 'אם', 'אב', 'חולים', 'קופת', 'רחוב'];
+let bankReports = [];
+
+function bankClean(t, extra){
   return DEID.toPlain(DEID.deidentify(hideNames(DEID.normalize(t).trim()), {extra: extra || [], labels: true, dates: true, phones: true, ids: true, emails: true, address: true, cities: true, doctors: true, kupa: true}));
 }
-function contribRow(field, text, on){
-  const opts = '<option value="">בחרי תחום</option>' + CONTRIB_FIELDS.map(k => '<option value="' + k + '"' + (k === field ? ' selected' : '') + '>' + esc(fieldTitle(k).replace('ממצאי האבחון - ', '')) + '</option>').join('');
-  return '<div class="cbrow"><div class="cbhead"><label><input type="checkbox" data-cb-on' + (on ? ' checked' : '') + '> לתרומה</label>' +
-    '<select data-cb-field aria-label="תחום">' + opts + '</select></div><textarea data-cb-text aria-label="טקסט הפסקה">' + esc(text) + '</textarea></div>';
+// שמות מתוך כותרות הדוח ("שם הילד: ...", "שם האם: ...", "גן: ..."), כדי למחוק אותם גם מגוף הטקסט
+function bankNames(text){
+  const out = new Set(); let m; NAME_LABEL_RE.lastIndex = 0;
+  while ((m = NAME_LABEL_RE.exec(text))){
+    const v = m[2].replace(/[()"]/g, ' ').trim();
+    if (/^\d/.test(v)) continue;
+    if (v.length >= 2 && v.length <= 40) out.add(v);
+    v.split(/[\s,;\/\-–]+/).forEach(w => { if (/^[א-ת'"]{2,}$/.test(w) && !NAME_STOP.includes(w)) out.add(w); });
+  }
+  DEID.surnameCandidates(text).forEach(w => out.add(w));
+  return [...out];
 }
-function openContribPanel(msg){
-  contribExtra = [];
-  const a = ageYears();
-  const cur = CONTRIB_FIELDS.map(k => [k, ($('o_' + k) && $('o_' + k).value.trim()) || '']).filter(([, v]) => v.length >= 30);
-  openModal('<h3>תרומה לבנק הניסוחים</h3>' +
-    '<p>הבנק המשותף עוזר לכל המאבחנות לקבל ניסוחים מדויקים יותר. אפשר לתרום רק פסקאות של <b>ממצאים וסיכום</b>, בלי רקע משפחתי ורפואי. ' +
-    'פרטים מזהים מוסרים כאן, במחשב שלך, ויש לעבור על כל פסקה לפני השליחה. כל תרומה נבדקת ומאושרת לפני שהיא נכנסת לבנק.</p>' +
-    '<h4>מהדוח הנוכחי</h4><div id="cbCur">' + (cur.length ? cur.map(([k, v]) => contribRow(k, contribClean(v), false)).join('') : '<p class="hint">אין עדיין פסקאות ממצאים או סיכום בדוח הנוכחי.</p>') + '</div>' +
-    '<h4>מדוח אחר</h4>' +
-    '<label class="lbl" for="cbFile">קובץ Word (docx) או טקסט (txt)</label><input type="file" id="cbFile" accept=".docx,.txt">' +
-    '<label class="lbl" for="cbPaste">או הדביקי טקסט</label><textarea id="cbPaste" style="min-height:70px"></textarea>' +
-    '<label class="lbl" for="cbNames">השמות שמופיעים בטקסט: הילד/ה, ההורים, האחים, הגן או בית הספר (מופרדים בפסיק)</label><input type="text" id="cbNames" autocomplete="off">' +
-    '<div class="mrow"><button class="btn" data-cb="add">הוספה לרשימה</button></div><div id="cbOther"></div>' +
-    '<label class="lbl" for="cbAge">גיל הילד/ה בשנים (משוער, לבחירת דוגמאות)</label><input type="number" id="cbAge" min="0" max="21" step="0.5" value="' + (a === null ? '' : Math.round(a * 2) / 2) + '">' +
-    '<label style="display:block;margin-top:10px"><input type="checkbox" id="cbAttest"> עברתי על כל פסקה שסימנתי: אין בה שמות, מוסדות, תאריכים או פרטים אחרים שמזהים את הילד/ה או את המשפחה, ויש לי הרשאה לשתף אותה לשיפור הכלי.</label>' +
-    '<div class="mrow"><button class="btn primary" data-cb="send">שליחה לבדיקה</button><button class="btn" data-cb="close">ביטול</button></div>' +
+function bankAge(text){
+  const m = text.match(/(?:גיל|בן|בת)\s*[:：]?\s*(\d{1,2})(?:[.,](\d{1,2}))?(?!\d)/);
+  if (!m) return null;
+  const y = +m[1] + (m[2] ? Math.min(+m[2], 11) / 12 : 0);
+  return y > 0 && y <= 21 ? Math.round(y * 2) / 2 : null;
+}
+// חלוקה לפרקים לפי הכותרות. טקסט לפני הכותרת הראשונה (פרטים אישיים) לא נלקח.
+function bankSections(text){
+  const lines = DEID.normalize(text).split('\n'), secs = [];
+  let cur = null, found = false;
+  const heading = line => {
+    const t = line.replace(/^[\s\d.)\-–•*]+/, '').replace(/^ממצאי האבחון\s*[-–:]\s*/, '').trim();
+    for (const [h, f] of BANK_HEADINGS){
+      if (t === h || t === h + ':' || t === h + ' :') return {field: f, rest: ''};
+      if (t.startsWith(h) && /^\s*[:：\-–]/.test(t.slice(h.length))) return {field: f, rest: t.slice(h.length).replace(/^\s*[:：\-–]\s*/, '')};
+    }
+    return null;
+  };
+  for (const line of lines){
+    const h = line.trim().length <= 120 ? heading(line) : null;
+    if (h){ found = true; cur = {field: h.field, raw: h.rest ? [h.rest] : []}; secs.push(cur); continue; }
+    if (cur) cur.raw.push(line);
+  }
+  const paras = t => t.split(/\n\s*\n/).map(x => x.replace(/\s+/g, ' ').trim()).filter(x => x.length >= 30);
+  let out = [];
+  if (!found) out = paras(text).map(p => ({field: (BANK_GUESS.find(([, re]) => re.test(p)) || [null])[0], raw: p}));
+  else secs.forEach(s => {
+    const body = s.raw.join('\n').trim();
+    if (!s.field || body.length < 30) return;
+    if (s.field === 'find') paras(body).forEach(p => out.push({field: (BANK_GUESS.find(([, re]) => re.test(p)) || [null])[0], raw: p}));
+    else out.push({field: s.field, raw: body});
+  });
+  // פרק שמופיע פעמיים מאוחד; פסקאות בלי תחום מזוהה לא נלקחות
+  const merged = {};
+  out.filter(s => s.field && BANK_FIELDS_IN.includes(s.field)).forEach(s => { merged[s.field] = merged[s.field] ? merged[s.field] + '\n' + s.raw : s.raw; });
+  return Object.entries(merged).map(([field, raw]) => ({field, raw}));
+}
+function bankParse(name, text){
+  const names = bankNames(DEID.normalize(text));
+  return {name, names, extra: [], on: true, age: bankAge(text), tools: BANK_TOOLS.filter(([, re]) => re.test(text)).map(([k]) => k),
+    sections: bankSections(text).map(s => ({field: s.field, raw: s.raw, on: true}))};
+}
+function bankRender(){
+  const fieldName = k => fieldTitle(k).replace('ממצאי האבחון - ', '');
+  $('bkReports').innerHTML = bankReports.map((r, i) => {
+    const all = r.names.concat(r.extra);
+    return '<div class="cbrep" data-rep="' + i + '"><div class="cbhead"><label><input type="checkbox" data-rep-on' + (r.on ? ' checked' : '') + '> <b>' + esc(r.name) + '</b></label>' +
+      '<span class="hint">' + r.sections.length + ' פרקים' + (r.age !== null ? ' · גיל ' + r.age : '') + (r.tools.length ? ' · ' + esc(r.tools.map(t => OPT.tools && OPT.tools[t] ? OPT.tools[t].label : t).join(', ')) : '') + '</span></div>' +
+      '<p class="hint">שמות שזוהו והוסרו מכל הדוח: ' + (all.length ? esc(all.join(', ')) : 'לא זוהו. הוסיפי ידנית') + '</p>' +
+      '<div class="cbhead"><input type="text" data-rep-names placeholder="שמות נוספים להסרה, מופרדים בפסיק" aria-label="שמות נוספים להסרה"><button class="btn" data-bk="names" data-i="' + i + '">הסרה</button>' +
+      '<label>גיל <input type="number" data-rep-age min="0" max="21" step="0.5" style="width:5em" value="' + (r.age === null ? '' : r.age) + '"></label></div>' +
+      (r.sections.length ? r.sections.map((s, j) => '<div class="cbrow" data-sec="' + j + '"><label><input type="checkbox" data-sec-on' + (s.on ? ' checked' : '') + '> ' + esc(fieldName(s.field)) + '</label>' +
+        '<textarea data-sec-text aria-label="' + esc(fieldName(s.field)) + '">' + esc(bankClean(s.raw, all)) + '</textarea></div>').join('')
+        : '<div class="warnbox">לא זוהו בדוח פרקי ממצאים, סיכום או המלצות.</div>') + '</div>';
+  }).join('');
+}
+// לפני כל רינדור מחדש: שומרים את מה שנערך וסומן במסך
+function bankSync(){
+  document.querySelectorAll('#bkReports .cbrep').forEach(el => {
+    const r = bankReports[+el.dataset.rep]; if (!r) return;
+    r.on = el.querySelector('[data-rep-on]').checked;
+    const a = parseFloat(el.querySelector('[data-rep-age]').value); r.age = isNaN(a) ? null : a;
+    el.querySelectorAll('[data-sec]').forEach(s => { const x = r.sections[+s.dataset.sec]; x.on = s.querySelector('[data-sec-on]').checked; x.raw = s.querySelector('[data-sec-text]').value; });
+  });
+}
+function openBankImport(msg){
+  bankReports = [];
+  openModal('<h3>ייבוא דוחות למאגר</h3>' +
+    '<p>אפשר לייבא דוחות אבחון שכבר כתבת, כדי לשפר את הניסוחים לכל המאבחנות. הקבצים נקראים כאן, במחשב שלך: השמות שבכותרות הדוח ושאר הפרטים המזהים מוסרים, ' +
+    'ורק פרקי <b>הממצאים, הסיכום, ההמלצות והמטרות</b> נשמרים. רקע, דיווחי הורים ומסגרת ופרטים אישיים לא יוצאים מהמחשב. כל דוח נבדק ומאושר לפני שהוא נכנס למאגר.</p>' +
+    '<label class="lbl" for="bkFiles">קובצי Word (docx) או טקסט (txt), אפשר כמה ביחד</label><input type="file" id="bkFiles" multiple accept=".docx,.txt">' +
+    '<label class="lbl" for="bkPaste">או הדביקי דוח אחד</label><textarea id="bkPaste" style="min-height:70px"></textarea>' +
+    '<div class="mrow"><button class="btn" data-bk="read">קריאה וסינון</button></div><div id="bkErr"></div><div id="bkReports"></div>' +
+    '<label style="display:block;margin-top:10px"><input type="checkbox" id="bkAttest"> עברתי על הדוחות שסימנתי: אין בהם שמות, מוסדות, תאריכים או פרטים אחרים שמזהים ילד/ה או משפחה, ויש לי הרשאה לשתף אותם לשיפור הכלי.</label>' +
+    '<div class="mrow"><button class="btn primary" data-bk="send">שליחה לאישור</button><button class="btn" data-bk="close">ביטול</button></div>' +
     (msg ? '<div class="warnbox" style="margin-top:10px">' + esc(msg) + '</div>' : ''));
-  $('modal').onclick = e => { const act = e.target.getAttribute && e.target.getAttribute('data-cb'); if (act) contribAction(act); };
+  $('modal').onclick = e => { const act = e.target.getAttribute && e.target.getAttribute('data-bk'); if (act) bankAction(act, e.target); };
 }
-async function contribAction(act){
-  if (act === 'close'){ $('modal').onclick = null; closeModal(); return; }
-  if (act === 'add'){
-    let text = val('cbPaste');
-    const f = $('cbFile').files[0];
-    if (f){ try { text = (await readAnyFile(f)) + '\n\n' + text; } catch(e){ return contribWarn(f.name + ': ' + e.message); } }
-    contribExtra = contribExtra.concat(list(val('cbNames')));
-    const paras = DEID.normalize(text).split(/\n\s*\n|\n(?=\s*(?:בתחום|לסיכום|סיכום))/).map(x => x.replace(/\s+/g, ' ').trim()).filter(x => x.length >= 30);
-    if (!paras.length) return contribWarn('לא נמצאו פסקאות באורך 30 תווים לפחות.');
-    $('cbOther').insertAdjacentHTML('beforeend', paras.map(p => contribRow((CONTRIB_GUESS.find(([, re]) => re.test(p)) || [''])[0], contribClean(p, contribExtra), false)).join(''));
-    $('cbPaste').value = ''; $('cbFile').value = '';
-    return;
-  }
-  if (act !== 'send') return;
-  const rows = [...$('modal').querySelectorAll('.cbrow')].filter(r => r.querySelector('[data-cb-on]').checked);
-  if (!rows.length) return contribWarn('לא סומנה אף פסקה לתרומה.');
-  if (!$('cbAttest').checked) return contribWarn('כדי לשלוח, יש לאשר שעברת על הפסקאות ושאין בהן פרטים מזהים.');
-  const names = nameList().map(x => x.name).concat(contribExtra).filter(n => n.length >= 2);
-  const items = [];
-  for (const r of rows){
-    const field = r.querySelector('[data-cb-field]').value, text = contribClean(r.querySelector('[data-cb-text]').value, contribExtra);
-    if (!field) return contribWarn('יש לבחור תחום לכל פסקה שסומנה.');
-    if (text.length < 30) return contribWarn('כל פסקה צריכה להיות באורך 30 תווים לפחות.');
-    const leak = names.find(n => new RegExp('(?<![\\u05D0-\\u05EA])' + escRe(n) + '(?![\\u05D0-\\u05EA])').test(text));
-    if (leak) return contribWarn('נמצא שם בטקסט שעמד להישלח. מחקי אותו או החליפי ב-[שם].');
-    items.push({field, text});
-  }
-  const ageV = parseFloat(val('cbAge'));
-  const body = {kind: 'contribute', attest: true, items, age: isNaN(ageV) ? null : ageV, tools: chips('tools')};
-  $('modal').onclick = null;
-  if (!(await confirmSend('תרומה לבנק הניסוחים', items.map(it => '— ' + fieldTitle(it.field) + ' —\n' + it.text).join('\n\n')))) return;
-  try {
-    const res = await fetch(PROXY.url, {method: 'POST', headers: {'content-type': 'application/json', 'x-ot-code': accessCode()}, body: JSON.stringify(body)});
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error((data.error && data.error.message) || ('שגיאה ' + res.status));
-    flash('תודה! ' + data.count + ' פסקאות נשלחו לבדיקה לפני כניסה לבנק');
-  } catch(e){ openContribPanel('התרומה לא נשלחה: ' + (e.message === 'Failed to fetch' ? 'אין חיבור לאינטרנט.' : e.message)); }
-}
-function contribWarn(m){
+function bankWarn(m){
   let w = $('modal').querySelector('.cbwarn');
   if (!w){ $('modal').insertAdjacentHTML('beforeend', '<div class="warnbox cbwarn" role="alert" style="margin-top:10px"></div>'); w = $('modal').querySelector('.cbwarn'); }
   w.textContent = m;
+}
+async function bankAction(act, el){
+  if (act === 'close'){ $('modal').onclick = null; closeModal(); return; }
+  if (act === 'read'){
+    bankSync();
+    const errs = [];
+    for (const f of [...$('bkFiles').files]){
+      try { bankReports.push(bankParse(f.name, await readAnyFile(f))); } catch(e){ errs.push(f.name + ': ' + e.message); }
+    }
+    if (val('bkPaste')) bankReports.push(bankParse('טקסט מודבק ' + (bankReports.length + 1), val('bkPaste')));
+    $('bkFiles').value = ''; $('bkPaste').value = '';
+    $('bkErr').innerHTML = errs.map(e => '<div class="warnbox">' + esc(e) + '</div>').join('');
+    if (!bankReports.length) return bankWarn('לא נקרא אף דוח.');
+    bankRender(); return;
+  }
+  if (act === 'names'){
+    bankSync();
+    const r = bankReports[+el.getAttribute('data-i')], box = el.parentNode.querySelector('[data-rep-names]');
+    r.extra = r.extra.concat(list(box.value)); bankRender(); return;
+  }
+  if (act !== 'send') return;
+  bankSync();
+  const chosen = bankReports.filter(r => r.on && r.sections.some(s => s.on));
+  if (!chosen.length) return bankWarn('לא סומן אף דוח לשליחה.');
+  if (!$('bkAttest').checked) return bankWarn('כדי לשלוח, יש לאשר שעברת על הדוחות ושאין בהם פרטים מזהים.');
+  const reports = [];
+  for (const r of chosen){
+    const names = r.names.concat(r.extra, nameList().map(x => x.name)).filter(n => n.length >= 2);
+    const sections = r.sections.filter(s => s.on).map(s => ({field: s.field, text: bankClean(s.raw, names)})).filter(s => s.text.length >= 30);
+    const leak = sections.find(s => names.some(n => new RegExp('(?<![\\u05D0-\\u05EA])' + escRe(n) + '(?![\\u05D0-\\u05EA])').test(s.text)));
+    if (leak) return bankWarn('בדוח "' + r.name + '" נשאר שם שזוהה. מחקי אותו או החליפי ב-[שם].');
+    if (sections.length) reports.push({sections, age: r.age, tools: r.tools, name: r.name});
+  }
+  $('modal').onclick = null;
+  const preview = reports.map((r, i) => '=== דוח ' + (i + 1) + (r.age !== null ? ', גיל ' + r.age : '') + ' ===\n' + r.sections.map(s => '— ' + fieldTitle(s.field) + ' —\n' + s.text).join('\n\n')).join('\n\n');
+  if (!(await confirmSend('ייבוא ' + reports.length + ' דוחות למאגר', preview))) return;
+  let sent = 0;
+  try {
+    for (let i = 0; i < reports.length; i += 10){
+      const batch = reports.slice(i, i + 10).map(r => ({sections: r.sections, age: r.age, tools: r.tools}));
+      const res = await fetch(PROXY.url, {method: 'POST', headers: {'content-type': 'application/json', 'x-ot-code': accessCode()},
+        body: JSON.stringify({kind: 'contribute', attest: true, reports: batch})});
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data.error && data.error.message) || ('שגיאה ' + res.status));
+      sent += data.count;
+    }
+    flash('תודה! ' + sent + ' דוחות נשלחו לאישור לפני כניסה למאגר');
+  } catch(e){ openBankImport((sent ? sent + ' דוחות נשלחו, והשאר לא: ' : 'הדוחות לא נשלחו: ') + (e.message === 'Failed to fetch' ? 'אין חיבור לאינטרנט.' : e.message)); }
 }
 
 // תצוגה מקדימה: מה בדיוק יוצא מהמחשב. השליחה רק אחרי אישור.
@@ -1774,7 +1869,7 @@ function parseSSE(raw){
 // =====================================================================
 //  טיוטה מוצפנת: שמירה לקובץ ופתיחה ממנו (למעבר בין טלפון למחשב)
 // =====================================================================
-const DRAFT_SKIP = ['cbFile', 'cbPaste', 'cbNames', 'cbAge', 'cbAttest', 'polishStyle', 'imFiles', 'imPaste', 'imExtra', 'kKey', 'kCode', 'kCode2', 'kModel', 'dPass', 'dPass2'];
+const DRAFT_SKIP = ['bkFiles', 'bkPaste', 'bkAttest', 'polishStyle', 'imFiles', 'imPaste', 'imExtra', 'kKey', 'kCode', 'kCode2', 'kModel', 'dPass', 'dPass2'];
 // withImport: גם הטקסט שיובא (המקורי, לפני הסרת הפרטים). רק לטיוטות המוצפנות, לא לשמירה האוטומטית.
 function collectState(withImport){
   const st = {v:1, ctl:{}, chips:{}, goals:goalOrder.slice(), out:{}};
@@ -3103,7 +3198,7 @@ document.addEventListener('keydown', trapFocus);
 $('modal').addEventListener('click', e => { const el = e.target.closest && e.target.closest('[data-p]'); if (el) phraseAction(el.getAttribute('data-p'), el); });
 $('pages').addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-addph]'); if (b) openAddPhrase(b.getAttribute('data-addph')); });
 $('myPhrases').addEventListener('click', openMyPhrases);
-$('contribBtn').addEventListener('click', () => { $('more').open = false; claudeReady() ? openContribPanel() : openKeyPanel(openContribPanel); });
+$('bankImportBtn').addEventListener('click', () => { $('more').open = false; claudeReady() ? openBankImport() : openKeyPanel(openBankImport); });
 $('meBtn').addEventListener('click', openMe);
 $('insightsBtn').addEventListener('click', openInsights);
 $('pages').addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-fb]'); if (b) openFeedback(+b.dataset.fb); });
