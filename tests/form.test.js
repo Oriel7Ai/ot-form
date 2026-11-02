@@ -9,6 +9,9 @@ const { chromium } = require('playwright');
 // מגישים את קבצי האתר מ-http מקומי, כמו ב-GitHub Pages (localhost נחשב מאובטח, כך שגם עבודה בלי אינטרנט נבדקת)
 const ROOT = path.resolve(__dirname, '..');
 const TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json'};
+// כתובת ה-Worker המתווך: כל הבקשות ל-Claude עוברות דרכו
+const WORKER = /^https:\/\/ot-form-proxy\.oriel7ai\.workers\.dev\//;
+
 const server = http.createServer((q, r) => {
   const f = path.join(ROOT, decodeURIComponent(q.url.split('?')[0]).replace(/\/$/, '/index.html'));
   if (!f.startsWith(ROOT) || !fs.existsSync(f) || fs.statSync(f).isDirectory()){ r.writeHead(404); return r.end(); }
@@ -445,9 +448,9 @@ test('ציפיות לפי גיל: הערה בכרטיס, בדיקה לפני י�
 
 test('אחרי ניסוח: בדיקה שכל מספר ותגית נשמרו', async b => {
   const page = await fresh(b);
-  await page.evaluate(() => { PROXY.url = ''; apiKey = 'sk-ant-test'; $('beery_vmi_p').value = '12'; $('beery_vmi_s').value = '82'; update(); });
+  await page.evaluate(() => { store(ACCESS_STORE, 'test-code-1234'); keyStatus(); $('beery_vmi_p').value = '12'; $('beery_vmi_s').value = '82'; update(); });
   const reply = {f_fm: 'באבחון BEERY, בחלק הבודק אינטגרציה ויזו-מוטורית קיבל ציון נמוך מהנורמה.'};
-  await page.route('https://api.anthropic.com/v1/messages', r => r.fulfill({status: 200, contentType: 'text/event-stream', body:
+  await page.route(WORKER, r => r.fulfill({status: 200, contentType: 'text/event-stream', body:
     'data: ' + JSON.stringify({type:'content_block_delta', index:0, delta:{type:'text_delta', text: JSON.stringify(reply)}}) + '\n\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n'}));
   await tab(page, 'st_review');
   await page.click('#polish'); await page.click('[data-send="yes"]');
@@ -458,12 +461,14 @@ test('אחרי ניסוח: בדיקה שכל מספר ותגית נשמרו', as
   assert.ok(!(await page.textContent('#bd_f_fm')).includes('חסרים'));
 });
 
-test('ההוראות ל-Claude: לא להשמיט קשיים ולא להמציא השפעה תפקודית', async b => {
+test('ההוראות ל-Claude ומפתח API לא נמצאים בקוד הטופס, והדף פונה רק ל-Worker', async b => {
   const page = await fresh(b);
-  const g = await page.evaluate(() => STYLE_GUIDE);
-  assert.match(g, /אסור להשמיט קושי, ממצא חריג או ציון מתחת לנורמה/);
-  assert.match(g, /אל תכתוב השפעה תפקודית שלא כתובה בשדות/);
-  assert.ok(!/4-8 משפטים/.test(g));
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  [/אסור להשמיט קושי/, /החזר אך ורק אובייקט JSON/, /STYLE_GUIDE|ICF_GUIDE|EXTRACT_GUIDE/, /x-api-key|sk-ant-/].forEach(re => assert.ok(!re.test(html), String(re)));
+  const csp = await page.$eval('meta[http-equiv="Content-Security-Policy"]', e => e.content);
+  assert.match(csp, /connect-src https:\/\/ot-form-proxy\.oriel7ai\.workers\.dev /);
+  assert.ok(!csp.includes('api.anthropic.com'));
+  assert.strictEqual(await page.evaluate(() => localStorage.getItem('ot_form_api_key_v1')), null);
 });
 
 test('מעבר שלב: הפוקוס עובר לכותרת השלב החדש', async b => {
@@ -510,15 +515,15 @@ test('הפחתת תנועה: בלי אנימציות למי שביקש', async b
 
 test('שליפה מקבצים כוללת את "השפעה על התפקוד"', async b => {
   const page = await fresh(b);
-  assert.strictEqual(await page.evaluate(() => 'impact' in extractSchema() && /impact:/.test(EXTRACT_GUIDE)), true);
+  assert.strictEqual(await page.evaluate(() => 'impact' in extractSchema()), true);
 });
 
 // תשובת Claude מדומה בהזרמה; שומרת את גוף הבקשה כדי לבדוק אילו הוראות נשלחו
 async function mockClaude(page, reply){
   const sent = [];
-  await page.route('https://api.anthropic.com/v1/messages', r => { sent.push(JSON.parse(r.request().postData())); r.fulfill({status: 200, contentType: 'text/event-stream', body:
+  await page.route(WORKER, r => { sent.push(JSON.parse(r.request().postData())); r.fulfill({status: 200, contentType: 'text/event-stream', body:
     'data: ' + JSON.stringify({type:'content_block_delta', index:0, delta:{type:'text_delta', text: JSON.stringify(reply)}}) + '\n\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n'}); });
-  await page.evaluate(() => { PROXY.url = ''; apiKey = 'sk-ant-test'; });
+  await page.evaluate(() => { store(ACCESS_STORE, 'test-code-1234'); keyStatus(); });
   return sent;
 }
 
@@ -529,22 +534,18 @@ test('סגנון ניסוח: ברירת מחדל סגנון המכון, ובחי
   await tab(page, 'st_review');
   assert.strictEqual(await page.$eval('#polishStyle', e => e.value), 'inst');
   await page.click('#polish'); await page.click('[data-send="yes"]'); await page.waitForSelector('#undoPolish');
-  assert.match(sent[0].system, /בסגנון של המכון/);
+  assert.deepStrictEqual([sent[0].kind, sent[0].style, 'system' in sent[0]], ['polish', 'inst', false]);
   await page.selectOption('#polishStyle', 'icf');
   assert.match(await page.textContent('#styleHint'), /\[לבדיקה/);
   await page.reload();
-  await page.evaluate(() => { PROXY.url = ''; apiKey = 'sk-ant-test'; });   // המפתח נשמר בזיכרון בלבד, ונדרש שוב אחרי רענון
   await tab(page, 'st_review');
   assert.strictEqual(await page.$eval('#polishStyle', e => e.value), 'icf');   // נשמר בדפדפן
   await page.click('#polish'); await page.click('[data-send="yes"]'); await page.waitForSelector('#undoPolish');
-  assert.match(sent[1].system, /מודל ה-ICF/);
+  assert.strictEqual(sent[1].style, 'icf');
 });
 
-test('הוראות ה-ICF שומרות על כללי הבטיחות, וחוזקות קודם בסיכום', async b => {
+test('סגנון הניסוח לא נשמר בטיוטה', async b => {
   const page = await fresh(b);
-  const g = await page.evaluate(() => ICF_GUIDE);
-  [/החזר אך ורק אובייקט JSON תקין/, /שמור על המגדר/, /אל תקבע אבחנה רפואית/, /לעגל או להשמיט/, /אסור להשמיט קושי/,
-   /חובה לעטוף את כל המשפט בסימון \[לבדיקה: \.\.\.\]/, /פתח במשפט הפתיחה, ואחריו בחוזקות/].forEach(re => assert.match(g, re));
   assert.strictEqual(await page.evaluate(() => 'polishStyle' in collectState().ctl), false);   // לא חלק מהטיוטה
 });
 
@@ -662,7 +663,8 @@ test('שליפה וניתוח: Opus עם מבנה מובטח, ציטוט לכל 
   await page.click('#imExtract'); await page.click('[data-send="yes"]');
   await page.waitForSelector('#imReview .rvlist');
   assert.strictEqual(sent[0].model, 'claude-opus-5-5');
-  assert.strictEqual(sent[0].output_config.format.type, 'json_schema');
+  assert.strictEqual(sent[0].kind, 'extract');
+  assert.strictEqual(sent[0].format.type, 'json_schema');
   const rows = await page.$$eval('#imReview [data-rvi]', els => els.map(e => [e.checked, e.disabled, e.closest('li').textContent]));
   assert.strictEqual(rows.length, 4);
   assert.deepStrictEqual(rows.map(r => [r[0], r[1]]), [[true, false], [true, false], [false, false], [false, true]]);
@@ -683,14 +685,14 @@ test('שליפה וניתוח: Opus עם מבנה מובטח, ציטוט לכל 
 test('שליפה: אם המודל לא תומך במבנה מובטח (400), נשלחת שוב בלי', async b => {
   const page = await fresh(b);
   await tab(page, 's_import'); await page.fill('#imPaste', 'רקע משפחתי: בת שנייה מתוך שלושה.'); await page.click('#imRead');
-  await page.evaluate(() => { PROXY.url = ''; apiKey = 'sk-ant-test'; });
+  await page.evaluate(() => { store(ACCESS_STORE, 'test-code-1234'); keyStatus(); });
   const sent = [];
-  await page.route('https://api.anthropic.com/v1/messages', r => { const b = JSON.parse(r.request().postData()); sent.push(b);
-    if (b.output_config) return r.fulfill({status: 400, contentType: 'application/json', body: '{"error":{"message":"output_config not supported"}}'});
+  await page.route(WORKER, r => { const b = JSON.parse(r.request().postData()); sent.push(b);
+    if (b.format) return r.fulfill({status: 400, contentType: 'application/json', body: '{"error":{"message":"output_config not supported"}}'});
     r.fulfill({status: 200, contentType: 'text/event-stream', body: 'data: ' + JSON.stringify({type:'content_block_delta', index:0, delta:{type:'text_delta', text: '{"items":[{"field":"famNote","value":"בת שנייה מתוך שלושה.","quote":"בת שנייה מתוך שלושה"}]}'}}) + '\n\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n'}); });
   await page.click('#imExtract'); await page.click('[data-send="yes"]');
   await page.waitForSelector('#imReview .rvlist');
-  assert.strictEqual(sent.length, 2); assert.ok(sent[0].output_config); assert.ok(!sent[1].output_config);
+  assert.strictEqual(sent.length, 2); assert.ok(sent[0].format); assert.ok(!sent[1].format);
 });
 
 test('טיוטה מוצפנת שומרת את הטקסט המיובא; השמירה האוטומטית לא', async b => {
@@ -771,13 +773,11 @@ test('משוב על שלב: נשמר בלי פרטים מזהים, ומופיע 
 });
 
 test('מצב Worker מתווך: קוד גישה, בלי מפתח ובלי הוראות בבקשה', async b => {
-  // ה-CSP של האתר עדיין לא כולל כתובת Worker, ולכן הבדיקה עוקפת אותו
-  const page = await fresh(b, {bypassCSP: true});
-  const W = 'https://ot-form-proxy.example.workers.dev/';
-  await page.evaluate(w => { PROXY.url = w; keyStatus(); chipInput('fm', 'midNo').checked = true; update(); }, W);
+  const page = await fresh(b);
+  await page.evaluate(() => { chipInput('fm', 'midNo').checked = true; update(); });
   assert.strictEqual(await page.textContent('#keyBtn'), 'קוד גישה');
   const sent = [];
-  await page.route(W, r => { sent.push({h: r.request().headers(), b: JSON.parse(r.request().postData())}); r.fulfill({status: 200, contentType: 'text/event-stream', body:
+  await page.route(WORKER, r => { sent.push({h: r.request().headers(), b: JSON.parse(r.request().postData())}); r.fulfill({status: 200, contentType: 'text/event-stream', body:
     'data: ' + JSON.stringify({type:'content_block_delta', index:0, delta:{type:'text_delta', text: '{"f_fm":"נצפה קושי בחציית קו האמצע."}'}}) + '\n\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n'}); });
   await tab(page, 'st_review');
   await page.selectOption('#polishStyle', 'icf');
@@ -807,16 +807,15 @@ test('ניסוח בעזרת Claude: התקדמות, תשובה קטועה, וב�
   const sse = obj => ['data: ' + JSON.stringify({type:'content_block_delta', index:0, delta:{type:'text_delta', text: JSON.stringify(obj)}}),
     'data: ' + JSON.stringify({type:'message_delta', delta:{stop_reason: obj.__stop || 'end_turn'}}), ''].join('\n');
   let reply = {f_beh: 'ניסוח מלוטש.'}, bodySent = null;
-  await page.evaluate(() => { PROXY.url = ''; apiKey = 'sk-ant-test'; });
-  await page.route('https://api.anthropic.com/v1/messages', r => { bodySent = JSON.parse(r.request().postData()); r.fulfill({status: 200, contentType: 'text/event-stream', body: sse(reply)}); });
+  await page.evaluate(() => { store(ACCESS_STORE, 'test-code-1234'); keyStatus(); });
+  await page.route(WORKER, r => { bodySent = JSON.parse(r.request().postData()); r.fulfill({status: 200, contentType: 'text/event-stream', body: sse(reply)}); });
   await tab(page, 's_find'); await page.selectOption('#coop', 'full');
   const auto = await out(page, 'f_beh');
   await tab(page, 'st_review');
   await page.click('#polish'); await page.click('[data-send="yes"]');
   await page.waitForSelector('#undoPolish');
   assert.strictEqual(bodySent.model, 'claude-sonnet-5-5');
-  assert.strictEqual(bodySent.stream, true);
-  assert.ok(bodySent.max_tokens >= 16000);
+  assert.deepStrictEqual([bodySent.kind, 'system' in bodySent, 'max_tokens' in bodySent], ['polish', false, false]);
   assert.strictEqual(await out(page, 'f_beh'), 'ניסוח מלוטש.');
   await page.click('#undoPolish');
   assert.strictEqual(await out(page, 'f_beh'), auto);
