@@ -74,7 +74,7 @@ function cors(origin, env){
   const ok = String(env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
   if (!ok.includes(origin)) return null;
   return {'access-control-allow-origin': origin, 'access-control-allow-methods': 'POST, OPTIONS',
-    'access-control-allow-headers': 'content-type, x-ot-code', 'access-control-max-age': '86400', 'vary': 'origin'};
+    'access-control-allow-headers': 'content-type, x-ot-code, x-ot-admin', 'access-control-max-age': '86400', 'vary': 'origin'};
 }
 const fail = (status, message, headers) => new Response(JSON.stringify({error: {message}}),
   {status, headers: Object.assign({'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store'}, headers)});
@@ -142,6 +142,76 @@ async function contribute(req, owner, env, ch){
     {status: 200, headers: Object.assign({'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store'}, ch)});
 }
 
+// ---- דף הניהול: אישור או דחייה של דוחות מהתור, וצפייה ומחיקה במאגר. מוגן בקוד ניהול נפרד (סוד ADMIN_CODE).
+const ok = (data, ch) => new Response(JSON.stringify(data),
+  {status: 200, headers: Object.assign({'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store'}, ch)});
+export function isAdmin(env, code){
+  const a = String(env.ADMIN_CODE || '');
+  if (a.length < 16 || typeof code !== 'string' || code.length !== a.length) return false;
+  let d = 0; for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ code.charCodeAt(i);
+  return d === 0;
+}
+async function readBank(env){ try { const b = JSON.parse(await env.OT_FORM.get(BANK_KEY) || '[]'); return Array.isArray(b) ? b : []; } catch(e){ return []; } }
+async function pendingList(env){
+  const out = []; let cursor;
+  do {
+    const page = await env.OT_FORM.list({prefix: 'contrib:pending:', cursor});
+    for (const k of page.keys){
+      const sealed = await env.OT_FORM.get(k.name);
+      if (!sealed) continue;
+      try { out.push(await openRecord(env.CONTRIB_KEY, sealed)); } catch(e){ out.push({id: k.name.slice('contrib:pending:'.length), broken: true}); }
+    }
+    cursor = page.list_complete ? null : page.cursor;
+  } while (cursor);
+  return out.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+}
+async function admin(req, env, ch){
+  if (!env.CONTRIB_KEY) return fail(500, 'המאגר עוד לא הוגדר ב-Worker.', ch);
+  const op = req.op;
+  if (op === 'list'){
+    const bank = await readBank(env), byField = {}, byWho = {};
+    bank.forEach(e => { byField[e.field] = (byField[e.field] || 0) + 1; const w = e.by || (e.src === 'synthetic' ? 'סינתטי' : '—'); byWho[w] = (byWho[w] || 0) + 1; });
+    return ok({pending: await pendingList(env), bank: {total: bank.length, byField, byWho}}, ch);
+  }
+  if (op === 'bank') return ok({bank: await readBank(env)}, ch);
+  const id = typeof req.id === 'string' && /^[0-9a-f-]{36}$/.test(req.id) ? req.id : null;
+  if (op === 'reject'){
+    if (!id) return fail(400, 'בקשה לא תקינה.', ch);
+    await env.OT_FORM.delete('contrib:pending:' + id);
+    return ok({ok: true}, ch);
+  }
+  if (op === 'approve'){
+    if (!id) return fail(400, 'בקשה לא תקינה.', ch);
+    const sealed = await env.OT_FORM.get('contrib:pending:' + id);
+    if (!sealed) return fail(404, 'הדוח כבר לא נמצא בתור.', ch);
+    const rec = await openRecord(env.CONTRIB_KEY, sealed);
+    // הנוסח המאושר (אחרי עריכה בדף הניהול) עובר שוב את אותן בדיקות
+    const c = cleanContribution({attest: true, reports: [{sections: req.sections, age: req.age, tools: req.tools}]});
+    if (c.error) return fail(422, c.error, ch);
+    const r = c.reports[0], age = r.age;
+    const range = age === null ? [0, 21] : [Math.max(0, age - 1), age + 1];
+    const bank = (await readBank(env)).filter(e => e.report !== id);
+    r.sections.forEach(sec => bank.push({id: id + ':' + sec.field, report: id, src: 'contrib', by: rec.by, at: new Date().toISOString(),
+      field: sec.field, age: range, tools: r.tools, style: 'any', text: sec.text}));
+    await env.OT_FORM.put(BANK_KEY, JSON.stringify(bank));
+    await env.OT_FORM.delete('contrib:pending:' + id);
+    return ok({ok: true, added: r.sections.length, total: bank.length}, ch);
+  }
+  if (op === 'delete'){
+    // מחיקה מהמאגר: לפי רשומות, או כל מה ששיתף/ה מאבחן/ת מסוים/ת (כולל דוחות שממתינים בתור)
+    const ids = Array.isArray(req.ids) ? req.ids.filter(x => typeof x === 'string') : [];
+    const by = typeof req.by === 'string' && req.by.trim() ? req.by.trim() : null;
+    if (!ids.length && !by) return fail(400, 'בקשה לא תקינה.', ch);
+    const bank = await readBank(env);
+    const keep = bank.filter(e => !ids.includes(e.id) && !(by && e.by === by));
+    await env.OT_FORM.put(BANK_KEY, JSON.stringify(keep));
+    let pendingRemoved = 0;
+    if (by) for (const p of await pendingList(env)) if (p.by === by){ await env.OT_FORM.delete('contrib:pending:' + p.id); pendingRemoved++; }
+    return ok({ok: true, removed: bank.length - keep.length, pendingRemoved, total: keep.length}, ch);
+  }
+  return fail(400, 'פעולה לא מוכרת.', ch);
+}
+
 export default {
   async fetch(request, env){
     const origin = request.headers.get('origin') || '';
@@ -150,12 +220,14 @@ export default {
     if (request.method === 'OPTIONS') return new Response(null, {status: 204, headers: ch});
     if (request.method !== 'POST') return fail(405, 'רק POST.', ch);
 
-    const owner = codeOwner(env.ACCESS_CODES, request.headers.get('x-ot-code'));
-    if (!owner) return fail(401, 'קוד הגישה לא תקין או בוטל.', ch);
+    const adminCode = request.headers.get('x-ot-admin');
+    const owner = adminCode ? null : codeOwner(env.ACCESS_CODES, request.headers.get('x-ot-code'));
+    if (adminCode ? !isAdmin(env, adminCode) : !owner) return fail(401, adminCode ? 'קוד הניהול שגוי.' : 'קוד הגישה לא תקין או בוטל.', ch);
 
     const raw = await request.text();
     if (raw.length > MAX_BODY) return fail(413, 'הטקסט ארוך מדי לבקשה אחת.', ch);
     let req; try { req = JSON.parse(raw); } catch(e){ return fail(400, 'בקשה לא תקינה.', ch); }
+    if (adminCode) return admin(req || {}, env, ch);
     if (req && req.kind === 'contribute') return contribute(req, owner, env, ch);
     const kind = req.kind === 'extract' ? 'extract' : req.kind === 'polish' ? 'polish' : null;
     if (!kind || typeof req.user !== 'string' || !req.user.trim()) return fail(400, 'בקשה לא תקינה.', ch);

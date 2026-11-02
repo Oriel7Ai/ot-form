@@ -4,5 +4,5 @@
 set -e
 rm -rf dist
 mkdir dist
-cp index.html sw.js manifest.webmanifest icon.svg _headers dist/
+cp index.html admin.html sw.js manifest.webmanifest icon.svg _headers dist/
 echo "dist: $(ls dist | tr '\n' ' ')"

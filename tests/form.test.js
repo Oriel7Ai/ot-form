@@ -611,6 +611,43 @@ test('ייבוא דוחות למאגר: שמות מכותרות הדוח מוס�
   assert.ok(!/(?<![א-ת])(יואב|לוי|מיכל|דוד|החרצית|רעננה|הייטק)(?![א-ת])|נולד בשבוע/.test(JSON.stringify(body)));
 });
 
+test('דף הניהול: כניסה בקוד, הצגת התור והמאגר, ואישור עם עריכה ובחירת פרקים', async b => {
+  const ctx = await b.newContext();
+  const calls = [];
+  let pending = [{id: '11111111-2222-3333-4444-555555555555', by: 'רות', at: '2026-11-02T10:00:00Z', age: 5.5, tools: ['beery'],
+    sections: [{field: 'f_fm', text: 'בתחום המוטוריקה העדינה- אוחז בעיפרון באחיזה תלת-אצבעית.'}, {field: 'summary', text: 'לסיכום, [שם] ילד מקסים עם קושי בגזירה.'}]}];
+  await ctx.route(u => !u.href.startsWith(URL) && !WORKER.test(u.href), r => r.abort());
+  await ctx.route(WORKER, r => {
+    const body = JSON.parse(r.request().postData()); calls.push({h: r.request().headers(), body});
+    if (r.request().headers()['x-ot-admin'] !== 'admin-code-1234567890') return r.fulfill({status: 401, contentType: 'application/json', body: '{"error":{"message":"קוד הניהול שגוי."}}'});
+    const reply = body.op === 'list' ? {pending, bank: {total: 9, byField: {f_fm: 2}, byWho: {'סינתטי': 9}}}
+      : body.op === 'approve' ? (pending = [], {ok: true, added: 1, total: 10}) : {ok: true};
+    r.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(reply)});
+  });
+  const page = await ctx.newPage(); const errors = []; page.on('pageerror', e => errors.push(e.message));
+  page.on('dialog', d => d.accept());
+  await page.goto(URL + 'admin.html');
+  await page.fill('#code', 'wrong-code'); await page.click('#enter');
+  await page.waitForFunction(() => /קוד הניהול שגוי/.test(document.getElementById('msg').textContent));
+  assert.strictEqual(await page.isVisible('#app'), false);
+  await page.fill('#code', 'admin-code-1234567890'); await page.click('#enter');
+  await page.waitForSelector('[data-p="0"]');
+  assert.match(await page.textContent('#stats'), /סך הכול 9 רשומות/);
+  assert.match(await page.textContent('#pending'), /שיתף\/ה: רות/);
+  // ביטול פרק הסיכום ועריכת פרק המוטוריקה העדינה, ואישור
+  await page.uncheck('[data-p="0"] [data-s="1"] [data-on]');
+  await page.fill('[data-p="0"] [data-s="0"] [data-text]', 'בתחום המוטוריקה העדינה- אוחז בעיפרון באחיזה תלת-אצבעית בשלה.');
+  await page.click('[data-act="approve"]');
+  await page.waitForFunction(() => /1 פרקים נוספו למאגר/.test(document.getElementById('msg').textContent));
+  const ap = calls.find(c => c.body.op === 'approve').body;
+  assert.deepStrictEqual(ap, {op: 'approve', id: '11111111-2222-3333-4444-555555555555', age: 5.5, tools: ['beery'],
+    sections: [{field: 'f_fm', text: 'בתחום המוטוריקה העדינה- אוחז בעיפרון באחיזה תלת-אצבעית בשלה.'}]});
+  assert.ok(calls.every(c => !c.h['x-ot-code']));
+  await page.waitForFunction(() => /אין דוחות שממתינים/.test(document.getElementById('pending').textContent));
+  assert.deepStrictEqual(errors, []);
+  await ctx.close();
+});
+
 test('קשר שסומן [לבדיקה]: הודעה, תג, בדיקה לפני ייצוא ואישור לפני ייצוא', async b => {
   const page = await fresh(b);
   await page.evaluate(() => { store(STYLE_STORE, 'icf'); styleSync(); chipInput('fm', 'midNo').checked = true; update(); });

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<!-- דף ניהול מאגר הדוחות: אישור או דחייה של דוחות שמאבחנים ייבאו, וצפייה ומחיקה במאגר.
+     הדף פונה רק ל-Worker, עם קוד ניהול נפרד. הקוד נשמר רק בלשונית הנוכחית. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src https://ot-form-proxy.oriel7ai.workers.dev">
+<title>ניהול מאגר הדוחות</title>
+<style>
+:root{--bg:#f5f8fc;--card:#fff;--ink:#1c2733;--muted:#5b6b7c;--line:#d6dee8;--accent:#1e5aa8;--ok:#1d7a46;--bad:#b3261e;--warn:#fff4d6}
+@media (prefers-color-scheme: dark){:root{--bg:#10161d;--card:#18212b;--ink:#e6edf3;--muted:#9fb0c2;--line:#2c3a49;--accent:#7fb0ff;--ok:#6fd39b;--bad:#ff8a80;--warn:#3a3016}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+main{max-width:900px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:8px 0 4px}h2{font-size:18px;margin:24px 0 8px}h3{font-size:16px;margin:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hint{color:var(--muted);font-size:14px}
+input[type=password],input[type=text],input[type=number],textarea{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+textarea{width:100%;min-height:110px;margin-top:6px}
+.btn{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:6px 12px;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.bad{color:var(--bad);border-color:var(--bad)}
+.sec{border-top:1px dashed var(--line);margin-top:10px;padding-top:8px}
+.msg{min-height:1.6em;font-weight:600}.msg.ok{color:var(--ok)}.msg.err{color:var(--bad)}
+.stats span{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:2px 10px;margin:3px;font-size:14px}
+.warn{background:var(--warn);border-radius:8px;padding:8px 10px}
+.entry{border-top:1px solid var(--line);padding:8px 0}
+.entry p{margin:4px 0;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<main>
+  <h1>ניהול מאגר הדוחות</h1>
+  <p class="hint">כאן מאשרים או דוחים דוחות שמאבחנים ייבאו למאגר. דוח נכנס למאגר רק אחרי אישור, ואז הפרקים שלו משמשים כדוגמאות לניסוח אצל כל המשתמשים. לפני אישור כדאי לקרוא כל פרק, ולמחוק כל פרט שעלול לזהות ילד/ה או משפחה.</p>
+
+  <div class="card" id="login">
+    <label for="code">קוד ניהול</label>
+    <div class="row"><input type="password" id="code" autocomplete="off" style="flex:1;min-width:220px"><button class="btn primary" id="enter">כניסה</button></div>
+    <p class="hint">הקוד נשמר רק בלשונית הזו, ונמחק כשסוגרים אותה.</p>
+  </div>
+  <div class="msg" id="msg" role="status" aria-live="polite"></div>
+
+  <div id="app" hidden>
+    <div class="row"><button class="btn" id="refresh">רענון</button><button class="btn" id="showBank">הצגת המאגר</button><button class="btn" id="logout">יציאה</button></div>
+    <h2>המאגר</h2>
+    <div class="card stats" id="stats"></div>
+    <h2>דוחות שממתינים לאישור <span id="count"></span></h2>
+    <div id="pending"></div>
+    <div id="bankBox" hidden><h2>כל הרשומות במאגר</h2><div class="card" id="bank"></div></div>
+  </div>
+</main>
+<script>
+const WORKER = 'https://ot-form-proxy.oriel7ai.workers.dev';
+const FIELDS = {f_beh: 'התנהגות ושיתוף פעולה', f_gm: 'מוטוריקה גסה', f_fm: 'מוטוריקה עדינה וגרפומוטוריקה', f_wr: 'כתיבה', f_cog: 'תפיסה וחשיבה',
+  f_play: 'משחק', f_sens: 'ויסות חושי', summary: 'סיכום', rec: 'מומלץ לטיפול בריפוי בעיסוק', goals: 'מטרות', recs: 'המלצות נוספות'};
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+let code = '', pending = [];
+try { code = sessionStorage.getItem('ot_admin') || ''; } catch(e){}
+
+function say(t, kind){ $('msg').textContent = t || ''; $('msg').className = 'msg' + (kind ? ' ' + kind : ''); }
+async function api(body){
+  let res;
+  try { res = await fetch(WORKER, {method: 'POST', headers: {'content-type': 'application/json', 'x-ot-admin': code}, body: JSON.stringify(body)}); }
+  catch(e){ throw new Error('אין חיבור ל-Worker.'); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok){ const err = new Error((data.error && data.error.message) || ('שגיאה ' + res.status)); err.status = res.status; throw err; }
+  return data;
+}
+function dt(s){ try { return new Date(s).toLocaleString('he-IL', {dateStyle: 'short', timeStyle: 'short'}); } catch(e){ return s || ''; } }
+
+async function load(done){
+  say('טוען...');
+  try {
+    const d = await api({op: 'list'});
+    pending = d.pending;
+    $('login').hidden = true; $('app').hidden = false;
+    $('stats').innerHTML = '<div>סך הכול <b>' + d.bank.total + '</b> רשומות.</div>' +
+      '<div>לפי תחום: ' + (Object.entries(d.bank.byField).map(([k, n]) => '<span>' + esc(FIELDS[k] || k) + ': ' + n + '</span>').join('') || '—') + '</div>' +
+      '<div>לפי משתף/ת: ' + (Object.entries(d.bank.byWho).map(([k, n]) => '<span>' + esc(k) + ': ' + n +
+        (k !== 'סינתטי' && k !== '—' ? ' <button class="btn bad" data-delby="' + esc(k) + '" title="מחיקת כל מה ששיתף/ה">מחיקה</button>' : '') + '</span>').join('') || '—') + '</div>';
+    $('count').textContent = '(' + pending.length + ')';
+    $('pending').innerHTML = pending.length ? pending.map(renderPending).join('') : '<p class="hint">אין דוחות שממתינים לאישור.</p>';
+    say(done || '', done ? 'ok' : '');
+  } catch(e){
+    if (e.status === 401){ code = ''; try { sessionStorage.removeItem('ot_admin'); } catch(_){} $('login').hidden = false; $('app').hidden = true; }
+    say(e.message, 'err');
+  }
+}
+function renderPending(p, i){
+  if (p.broken) return '<div class="card warn">רשומה שלא ניתן לפענח (' + esc(p.id) + '). <button class="btn bad" data-act="reject" data-i="' + i + '">מחיקה</button></div>';
+  return '<div class="card" data-p="' + i + '"><div class="row"><h3>דוח ' + (i + 1) + '</h3><span class="hint">שיתף/ה: ' + esc(p.by) + ' · ' + dt(p.at) + '</span></div>' +
+    '<div class="row" style="margin-top:6px"><label>גיל <input type="number" data-age min="0" max="21" step="0.5" style="width:6em" value="' + (p.age == null ? '' : p.age) + '"></label>' +
+    '<label>כלי הערכה <input type="text" data-tools value="' + esc((p.tools || []).join(', ')) + '"></label></div>' +
+    p.sections.map((s, j) => '<div class="sec" data-s="' + j + '"><label><input type="checkbox" data-on checked> <b>' + esc(FIELDS[s.field] || s.field) + '</b></label>' +
+      '<textarea data-text aria-label="' + esc(FIELDS[s.field] || s.field) + '">' + esc(s.text) + '</textarea></div>').join('') +
+    '<div class="row" style="margin-top:10px"><button class="btn primary" data-act="approve" data-i="' + i + '">אישור למאגר</button><button class="btn bad" data-act="reject" data-i="' + i + '">דחייה ומחיקה</button></div></div>';
+}
+async function act(kind, i, btn){
+  const p = pending[i]; if (!p) return;
+  if (kind === 'reject'){
+    if (!confirm('לדחות את הדוח ולמחוק אותו לצמיתות?')) return;
+    btn.disabled = true;
+    try { await api({op: 'reject', id: p.id}); load('הדוח נמחק מהתור.'); } catch(e){ btn.disabled = false; say(e.message, 'err'); }
+    return;
+  }
+  const card = document.querySelector('[data-p="' + i + '"]');
+  const sections = [...card.querySelectorAll('[data-s]')].filter(s => s.querySelector('[data-on]').checked)
+    .map(s => ({field: p.sections[+s.dataset.s].field, text: s.querySelector('[data-text]').value.trim()}));
+  if (!sections.length) return say('לא סומן אף פרק לאישור. כדי להסיר את הדוח, לחצי "דחייה".', 'err');
+  const age = parseFloat(card.querySelector('[data-age]').value);
+  const tools = card.querySelector('[data-tools]').value.split(/[,\s]+/).map(t => t.trim()).filter(Boolean);
+  btn.disabled = true;
+  try {
+    const r = await api({op: 'approve', id: p.id, sections, age: isNaN(age) ? null : age, tools});
+    load(r.added + ' פרקים נוספו למאגר. במאגר עכשיו ' + r.total + ' רשומות.');
+  } catch(e){ btn.disabled = false; say(e.message, 'err'); }
+}
+async function showBank(){
+  try {
+    const d = await api({op: 'bank'});
+    $('bankBox').hidden = false;
+    $('bank').innerHTML = d.bank.length ? d.bank.map(e => '<div class="entry"><div class="row"><b>' + esc(FIELDS[e.field] || e.field) + '</b><span class="hint">' +
+      esc(e.src === 'synthetic' ? 'סינתטי' : 'שיתף/ה: ' + (e.by || '—')) + (Array.isArray(e.age) ? ' · גיל ' + e.age[0] + '–' + e.age[1] : '') + '</span>' +
+      '<button class="btn bad" data-delid="' + esc(e.id) + '">מחיקה</button></div><p>' + esc(e.text) + '</p></div>').join('') : '<p class="hint">המאגר ריק.</p>';
+    $('bankBox').scrollIntoView({behavior: 'smooth'});
+  } catch(e){ say(e.message, 'err'); }
+}
+async function del(body, question){
+  if (!confirm(question)) return;
+  try { const r = await api(Object.assign({op: 'delete'}, body)); await load('נמחקו ' + r.removed + ' רשומות מהמאגר' + (r.pendingRemoved ? ' ו-' + r.pendingRemoved + ' דוחות מהתור' : '') + '.'); if (!$('bankBox').hidden) showBank(); }
+  catch(e){ say(e.message, 'err'); }
+}
+
+$('enter').addEventListener('click', () => { code = $('code').value.trim(); $('code').value = ''; try { sessionStorage.setItem('ot_admin', code); } catch(e){} load(); });
+$('code').addEventListener('keydown', e => { if (e.key === 'Enter') $('enter').click(); });
+$('refresh').addEventListener('click', () => load());
+$('showBank').addEventListener('click', showBank);
+$('logout').addEventListener('click', () => { code = ''; try { sessionStorage.removeItem('ot_admin'); } catch(e){} location.reload(); });
+document.addEventListener('click', e => {
+  const t = e.target;
+  if (t.dataset.act) act(t.dataset.act, +t.dataset.i, t);
+  else if (t.dataset.delby) del({by: t.dataset.delby}, 'למחוק את כל מה ש' + t.dataset.delby + ' שיתף/ה, מהמאגר ומהתור?');
+  else if (t.dataset.delid) del({ids: [t.dataset.delid]}, 'למחוק את הרשומה מהמאגר?');
+});
+if (code) load();
+</script>
+</body>
+</html>
