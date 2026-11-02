@@ -582,6 +582,7 @@ test('ייבוא דוחות למאגר: שמות מכותרות הדוח מוס�
   // דוח שני בלי כותרות: מחולק לפסקאות לפי התוכן
   await page.fill('#bkPaste', 'בתחום המוטוריקה הגסה- מתקשה בשיווי משקל ובקפיצות על רגל אחת, ונעזר בתיווך.\n\nהמשפחה גרה בקרבת סבתא ומגיעה בקביעות.');
   await page.click('[data-bk="read"]');
+  await page.waitForSelector('#bkReports .cbrep >> nth=1');   // הקריאה אסינכרונית
   const reps = await page.$$eval('#bkReports .cbrep', els => els.map(e => ({secs: [...e.querySelectorAll('.cbrow')].map(r => [r.querySelector('label').textContent.trim(), r.querySelector('textarea').value]),
     age: e.querySelector('[data-rep-age]').value, info: e.textContent})));
   assert.strictEqual(reps.length, 2);
