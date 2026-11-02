@@ -564,43 +564,51 @@ test('ניסוח: נשלחים גיל מעוגל, השדות וכלי ההערכ
   assert.ok(ctx.fields.every(f => /^[a-z_]+$/.test(f)));
 });
 
-test('תרומה לבנק: פסקאות מהדוח ומדוח אחר, הסרת שמות, אישור חובה, ושליחה ל-Worker', async b => {
+const OLD_REPORT = ['שם הילד: יואב לוי\tגיל: 5.4', 'שם האם: מיכל\tשם האב: דוד', 'גן: גן החרצית, רעננה', 'תאריך: 12.3.2025', '',
+  'רקע התפתחותי ורפואי רלוונטי', 'יואב נולד בשבוע 39 לאחר הריון תקין. אמו מיכל מדווחת על התפתחות מוטורית איטית.', '',
+  'רקע משפחתי', 'בן שני מתוך שלושה. אביו דוד עובד בהייטק.', '', 'אמצעי הערכה', 'Beery VMI, תצפית', '',
+  'ממצאי האבחון - מוטוריקה עדינה וגרפומוטוריקה', 'יואב אוחז בעיפרון באחיזה ארבע-אצבעית ומתקשה בגזירה על קו. באבחון BEERY קיבל ציון באחוזון 9.', '',
+  'ממצאי האבחון - ויסות חושי', 'לפי דיווח מיכל, יואב מכסה את אוזניו ברעשים חזקים ונמנע ממגע בחומרים דביקים.', '',
+  'סיכום', 'לסיכום, יואב לוי ילד מקסים עם קשיים במוטוריקה עדינה. מומלץ מעקב בגן החרצית.', '',
+  'המלצות נוספות', 'מומלץ לשלב פעילויות גזירה והשחלה בבית ובגן, פעמיים בשבוע.'].join('\n');
+
+test('ייבוא דוחות למאגר: שמות מכותרות הדוח מוסרים מכל הטקסט, רק ממצאים, סיכום והמלצות, ושליחה לאישור', async b => {
   const page = await fresh(b);
-  await page.fill('#name', 'נועה');
-  await page.evaluate(() => { $('ageY').value = '5'; $('ageM').value = '2'; chipInput('tools', 'beery').checked = true; chipInput('fm', 'midNo').checked = true; update(); });
   await page.evaluate(() => store(ACCESS_STORE, 'test-code-1234'));
   const sent = [];
   await page.route(WORKER, r => { sent.push(JSON.parse(r.request().postData())); r.fulfill({status: 200, contentType: 'application/json', body: '{"ok":true,"count":2}'}); });
-  await page.click('#more summary'); await page.click('#contribBtn');
-  // מהדוח הנוכחי: רק פסקאות באורך 30 תווים לפחות, והשם מוחלף בתגית
-  const cur = await page.$$eval('#cbCur .cbrow', rows => rows.map(r => [r.querySelector('[data-cb-field]').value, r.querySelector('[data-cb-text]').value]));
-  const sum = cur.find(r => r[0] === 'summary');
-  assert.ok(sum && !sum[1].includes('נועה') && sum[1].includes('[שם]'));
-  assert.ok(cur.every(r => r[1].length >= 30));
-  // מדוח אחר: שמות מוסרים, והתחום מנוחש לפי התוכן
-  await page.fill('#cbPaste', 'בתחום המוטוריקה הגסה- דני מתקשה בשיווי משקל ובקפיצות על רגל אחת, ונעזר בתיווך.\n\nקצר');
-  await page.fill('#cbNames', 'דני');
-  await page.click('[data-cb="add"]');
-  const other = await page.$$eval('#cbOther .cbrow', rows => rows.map(r => [r.querySelector('[data-cb-field]').value, r.querySelector('[data-cb-text]').value]));
-  assert.strictEqual(other.length, 1);
-  assert.strictEqual(other[0][0], 'f_gm');
-  assert.ok(!other[0][1].includes('דני') && other[0][1].includes('[הוסר]'));
-  // סימון שתי פסקאות; בלי אישור, לא נשלח
-  await page.check('#cbCur .cbrow:has([data-cb-field] option[value="summary"]:checked) [data-cb-on]');
-  await page.check('#cbOther .cbrow [data-cb-on]');
-  await page.click('[data-cb="send"]');
+  await page.click('#more summary'); await page.click('#bankImportBtn');
+  await page.setInputFiles('#bkFiles', {name: 'דוח יואב.txt', mimeType: 'text/plain', buffer: Buffer.from(OLD_REPORT, 'utf8')});
+  // דוח שני בלי כותרות: מחולק לפסקאות לפי התוכן
+  await page.fill('#bkPaste', 'בתחום המוטוריקה הגסה- מתקשה בשיווי משקל ובקפיצות על רגל אחת, ונעזר בתיווך.\n\nהמשפחה גרה בקרבת סבתא ומגיעה בקביעות.');
+  await page.click('[data-bk="read"]');
+  await page.waitForSelector('#bkReports .cbrep >> nth=1');   // הקריאה אסינכרונית
+  const reps = await page.$$eval('#bkReports .cbrep', els => els.map(e => ({secs: [...e.querySelectorAll('.cbrow')].map(r => [r.querySelector('label').textContent.trim(), r.querySelector('textarea').value]),
+    age: e.querySelector('[data-rep-age]').value, info: e.textContent})));
+  assert.strictEqual(reps.length, 2);
+  const r1 = reps[0];
+  assert.deepStrictEqual(r1.secs.map(x => x[0]), ['מוטוריקה עדינה וגרפומוטוריקה', 'ויסות חושי', 'סיכום', 'המלצות נוספות']);
+  assert.strictEqual(r1.age, '5.5');
+  assert.match(r1.info, /Beery/);
+  const all1 = r1.secs.map(x => x[1]).join(' ');
+  ['יואב', 'לוי', 'מיכל', 'דוד', 'החרצית', 'רעננה', 'נולד בשבוע', 'הייטק'].forEach(w => assert.ok(!new RegExp('(?<![א-ת])' + w + '(?![א-ת])').test(all1), w + ' :: ' + all1));
+  assert.match(all1, /אחוזון 9/);
+  assert.deepStrictEqual(reps[1].secs.map(x => x[0]), ['מוטוריקה גסה']);   // פסקת הרקע בלי תחום לא נלקחה
+  // בלי הצהרה לא נשלח
+  await page.click('[data-bk="send"]');
   assert.match(await page.textContent('.cbwarn'), /יש לאשר/);
-  // שם שנכתב ידנית בטקסט אחרי ההוספה מוחלף בתגית לפני השליחה
-  await page.fill('#cbOther [data-cb-text]', 'בתחום המוטוריקה הגסה- נועה מתקשה בשיווי משקל, ודני נעזר בתיווך בקפיצות.');
-  await page.check('#cbAttest'); await page.click('[data-cb="send"]');
-  assert.match(await page.textContent('.sendprev'), /\[שם\] מתקשה בשיווי משקל/);
+  // ביטול פרק ההמלצות בדוח הראשון, ושליחה
+  await page.uncheck('#bkReports .cbrep >> nth=0 >> .cbrow >> nth=3 >> [data-sec-on]');
+  await page.check('#bkAttest'); await page.click('[data-bk="send"]');
+  assert.match(await page.textContent('.sendprev'), /=== דוח 1, גיל 5\.5 ===/);
   await page.click('[data-send="yes"]');
-  await page.waitForFunction(() => /נשלחו לבדיקה/.test($('msg').textContent));
+  await page.waitForFunction(() => /נשלחו לאישור/.test($('msg').textContent));
   assert.strictEqual(sent.length, 1);
   const body = sent[0];
-  assert.deepStrictEqual([body.kind, body.attest, body.age, body.tools.includes('beery')], ['contribute', true, 5, true]);
-  assert.deepStrictEqual(body.items.map(i => i.field).sort(), ['f_gm', 'summary']);
-  assert.ok(body.items.every(i => !/נועה|דני/.test(i.text)));
+  assert.deepStrictEqual([body.kind, body.attest, body.reports.length], ['contribute', true, 2]);
+  assert.deepStrictEqual(body.reports[0].sections.map(x => x.field), ['f_fm', 'f_sens', 'summary']);
+  assert.deepStrictEqual([body.reports[0].age, body.reports[0].tools.includes('beery')], [5.5, true]);
+  assert.ok(!/(?<![א-ת])(יואב|לוי|מיכל|דוד|החרצית|רעננה|הייטק)(?![א-ת])|נולד בשבוע/.test(JSON.stringify(body)));
 });
 
 test('קשר שסומן [לבדיקה]: הודעה, תג, בדיקה לפני ייצוא ואישור לפני ייצוא', async b => {
