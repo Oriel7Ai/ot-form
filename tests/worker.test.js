@@ -13,7 +13,8 @@ function makeEnv(over){
   return Object.assign({
     ALLOWED_ORIGINS: ORIGIN + ', http://127.0.0.1:8080', DAILY_LIMIT: '3', ANTHROPIC_API_KEY: 'sk-ant-server',
     ACCESS_CODES: 'רות=' + CODE + '\nדנה=dana-55aa77bb',
-    OT_FORM: {kv, get: async k => kv.has(k) ? kv.get(k) : null, put: async (k, v) => { kv.set(k, v); }},
+    OT_FORM: {kv, get: async k => kv.has(k) ? kv.get(k) : null, put: async (k, v) => { kv.set(k, v); }, delete: async k => { kv.delete(k); },
+      list: async o => ({keys: [...kv.keys()].filter(k => k.startsWith(o.prefix || '')).map(name => ({name})), list_complete: true})},
   }, over || {});
 }
 const req = (body, opts) => new Request('https://ot-form-proxy.example.workers.dev/', Object.assign({method: 'POST',
@@ -175,6 +176,69 @@ test('ייבוא דוחות למאגר: מגבלה יומית של 30 דוחות
   for (let i = 0; i < 2; i++) assert.strictEqual((await w.fetch(req({kind: 'contribute', attest: true, reports: ten}), env)).status, 200);
   assert.strictEqual((await w.fetch(req({kind: 'contribute', attest: true, reports: ten.concat([]).slice(0, 10).concat([])}), env)).status, 200);
   assert.strictEqual((await w.fetch(req({kind: 'contribute', attest: true, reports: [REP]}), env)).status, 429);
+});
+
+const ADMIN = 'adm-' + 'x'.repeat(28);
+const adminReq = body => req(body, {headers: {'content-type': 'application/json', origin: ORIGIN, 'x-ot-admin': ADMIN}});
+async function withPending(w){
+  const env = makeEnv({CONTRIB_KEY: CKEY, ADMIN_CODE: ADMIN});
+  env.OT_FORM.kv.set('bank:v1', JSON.stringify([{id: 'syn-1', src: 'synthetic', field: 'f_fm', age: [4, 6], tools: [], style: 'any', text: 'דוגמה סינתטית'}]));
+  await w.fetch(req({kind: 'contribute', attest: true, reports: [REP]}), env);
+  return env;
+}
+
+test('ניהול: קוד ניהול שגוי או קוד גישה רגיל לא מקבלים גישה', async w => {
+  const env = await withPending(w);
+  const bad = await w.fetch(req({op: 'list'}, {headers: {'content-type': 'application/json', origin: ORIGIN, 'x-ot-admin': 'adm-' + 'y'.repeat(28)}}), env);
+  assert.strictEqual(bad.status, 401);
+  const short = await w.fetch(req({op: 'list'}, {headers: {'content-type': 'application/json', origin: ORIGIN, 'x-ot-admin': 'short'}}), makeEnv({CONTRIB_KEY: CKEY, ADMIN_CODE: 'short'}));
+  assert.strictEqual(short.status, 401);
+  // קוד גישה של מאבחנת עם op של ניהול: מטופל כבקשה רגילה ונדחה, בלי לחשוף את התור
+  const asUser = await w.fetch(req({op: 'list'}), env);
+  assert.strictEqual(asUser.status, 400);
+  const pre = await w.fetch(new Request('https://x/', {method: 'OPTIONS', headers: {origin: ORIGIN}}), env);
+  assert.match(pre.headers.get('access-control-allow-headers'), /x-ot-admin/);
+});
+
+test('ניהול: רשימת התור מפוענחת, ואישור עם עריכה מכניס למאגר ומוחק מהתור', async w => {
+  const env = await withPending(w);
+  const list = await (await w.fetch(adminReq({op: 'list'}), env)).json();
+  assert.strictEqual(list.pending.length, 1);
+  const p = list.pending[0];
+  assert.strictEqual(p.by, 'רות'); assert.strictEqual(p.sections.length, 3);
+  assert.deepStrictEqual(list.bank, {total: 1, byField: {f_fm: 1}, byWho: {'סינתטי': 1}});
+  // אישור רק של שני פרקים, עם תיקון נוסח
+  const r = await w.fetch(adminReq({op: 'approve', id: p.id, age: 5, tools: ['beery'], sections: [{field: 'f_fm', text: PARA + ' (נערך)'}, {field: 'summary', text: p.sections[1].text}]}), env);
+  assert.deepStrictEqual(await r.json(), {ok: true, added: 2, total: 3});
+  const bank = JSON.parse(env.OT_FORM.kv.get('bank:v1'));
+  const fm = bank.find(e => e.id === p.id + ':f_fm');
+  assert.deepStrictEqual([fm.src, fm.by, fm.report, fm.age, fm.tools, fm.style], ['contrib', 'רות', p.id, [4, 6], ['beery'], 'any']);
+  assert.ok(fm.text.endsWith('(נערך)'));
+  assert.strictEqual(env.OT_FORM.kv.has('contrib:pending:' + p.id), false);
+  // הדוגמה המאושרת משמשת בניסוח, בלי שם המשתפת
+  await w.fetch(req({kind: 'polish', user: 'x', ctx: {age: 5, fields: ['summary'], tools: []}}), env);
+  assert.ok(upstream.body.system.includes(p.sections[1].text) && !upstream.body.system.includes('רות'));
+  // אישור חוזר: הדוח כבר לא בתור
+  assert.strictEqual((await w.fetch(adminReq({op: 'approve', id: p.id, sections: [{field: 'f_fm', text: PARA}]}), env)).status, 404);
+});
+
+test('ניהול: אישור עם פרט מזהה נדחה, דחייה מוחקת מהתור, ומחיקה לפי משתפת כוללת את התור', async w => {
+  const env = await withPending(w);
+  const id = (await (await w.fetch(adminReq({op: 'list'}), env)).json()).pending[0].id;
+  const bad = await w.fetch(adminReq({op: 'approve', id, sections: [{field: 'f_fm', text: PARA + ' 052-1234567'}]}), env);
+  assert.strictEqual(bad.status, 422);
+  assert.strictEqual(env.OT_FORM.kv.has('contrib:pending:' + id), true);
+  assert.deepStrictEqual(await (await w.fetch(adminReq({op: 'reject', id}), env)).json(), {ok: true});
+  assert.strictEqual(env.OT_FORM.kv.has('contrib:pending:' + id), false);
+  // דוח אחד מאושר ועוד אחד בתור, שניהם של רות
+  await w.fetch(req({kind: 'contribute', attest: true, reports: [REP, REP]}), env);
+  const ids = (await (await w.fetch(adminReq({op: 'list'}), env)).json()).pending.map(p => p.id);
+  await w.fetch(adminReq({op: 'approve', id: ids[0], sections: [{field: 'f_fm', text: PARA}]}), env);
+  const del = await (await w.fetch(adminReq({op: 'delete', by: 'רות'}), env)).json();
+  assert.deepStrictEqual(del, {ok: true, removed: 1, pendingRemoved: 1, total: 1});
+  assert.deepStrictEqual(JSON.parse(env.OT_FORM.kv.get('bank:v1')).map(e => e.id), ['syn-1']);
+  const del2 = await (await w.fetch(adminReq({op: 'delete', ids: ['syn-1']}), env)).json();
+  assert.strictEqual(del2.total, 0);
 });
 
 (async () => {
