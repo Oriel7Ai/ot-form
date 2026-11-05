@@ -956,16 +956,30 @@ test('ניסוח בעזרת Claude: התקדמות, תשובה קטועה, וב�
   assert.strictEqual(await out(page, 'f_beh'), auto);
 });
 
+// אם הדפדפן של Playwright לא הותקן (למשל ב-Windows כשההורדה נחסמת), משתמשים ב-Chrome או ב-Edge שמותקנים במחשב.
+// ב-CI הדפדפן מותקן, כך שההתנהגות שם לא משתנה.
+async function launchBrowser(){
+  try { return await chromium.launch(); }
+  catch (e){
+    if (!/Executable doesn't exist/.test(e.message)) throw e;
+    for (const channel of ['chrome', 'msedge']){
+      try { const b = await chromium.launch({channel}); console.log('(Playwright Chromium לא מותקן; רץ על ' + channel + ')'); return b; } catch {}
+    }
+    throw e;
+  }
+}
+
 (async () => {
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   URL = 'http://127.0.0.1:' + server.address().port + '/';
-  const browser = await chromium.launch();
+  const browser = await launchBrowser();
   let fail = 0;
   for (const t of tests){
     try { await t.fn(browser); console.log('✓ ' + t.name); }
     catch (e){ fail++; console.log('✗ ' + t.name + '\n   ' + (e.message || e).split('\n').join('\n   ')); }
   }
-  await browser.close(); server.close();
+  // Chrome שמותקן במחשב לפעמים לא נסגר מיד; לא מחכים לו יותר מ-5 שניות (process.exit סוגר את השאר)
+  await Promise.race([browser.close(), new Promise(r => setTimeout(r, 5000))]); server.close();
   console.log('\n' + (tests.length - fail) + '/' + tests.length + ' עברו');
   process.exit(fail ? 1 : 0);
 })();

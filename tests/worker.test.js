@@ -2,6 +2,9 @@
 // Anthropic ו-KV מדומים; בודקים הרשאות, CORS, בחירת הוראות ומודל, מגבלת שימוש והעברת ההזרמה.
 const path = require('path');
 const assert = require('assert');
+const { pathToFileURL } = require('url');
+// ב-Windows import() לא מקבל נתיב כמו C:...; כתובת file:// עובדת בכל מערכת
+const WORKER = pathToFileURL(path.resolve(__dirname, '..', 'worker', 'index.js')).href;
 
 const ORIGIN = 'https://oriel7ai.github.io';
 const CODE = 'ruth-7f3a9c21';
@@ -124,7 +127,7 @@ test('בנק ניסוחים: בלי בנק, בנק פגום, ctx לא תקין �
   assert.strictEqual(upstream.body.system, 'הוראות סגנון המכון');
   await w.fetch(req({kind: 'extract', user: 'x', ctx: {age: 5, fields: ['f_fm']}}), env);
   assert.strictEqual(upstream.body.system, 'הוראות שליפה');
-  const m = await import(path.resolve(__dirname, '..', 'worker', 'index.js'));
+  const m = await import(WORKER);
   assert.deepStrictEqual(m.cleanCtx({age: 5.5, fields: ['f_fm', 'x'], tools: ['beery', 'BAD TOOL']}), {age: 5.5, fields: ['f_fm'], tools: ['beery']});
 });
 
@@ -141,7 +144,7 @@ test('ייבוא דוחות למאגר: כל דוח נשמר מוצפן בתור
   assert.strictEqual(upstream, null);
   const keys = [...env.OT_FORM.kv.keys()].filter(k => k.startsWith('contrib:pending:'));
   assert.strictEqual(keys.length, 2);
-  const m = await import(path.resolve(__dirname, '..', 'worker', 'index.js'));
+  const m = await import(WORKER);
   const recs = await Promise.all(keys.map(k => m.openRecord(CKEY, env.OT_FORM.kv.get(k))));
   keys.forEach(k => assert.ok(!env.OT_FORM.kv.get(k).includes('אוחז') && !env.OT_FORM.kv.get(k).includes('רות'), 'נשמר מוצפן'));
   const full = recs.find(x => x.sections.length === 3);
@@ -260,7 +263,7 @@ test('עריכה מהירה: הוראה כללית ועוד הוראה לפעו�
 });
 
 (async () => {
-  const w = (await import(path.resolve(__dirname, '..', 'worker', 'index.js'))).default;
+  const w = (await import(WORKER)).default;
   let fail = 0;
   for (const t of tests){
     try { await t.fn(w); console.log('✓ ' + t.name); }
